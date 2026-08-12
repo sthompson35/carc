@@ -10,6 +10,7 @@ const apiRoutes    = require('./routes/api');
 const rosterRoutes  = require('./routes/roster');
 const rollCallRoutes = require('./routes/rollcalls');
 const syncEventRoutes = require('./routes/syncEvents');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -47,6 +48,7 @@ app.use('/', apiRoutes);
 app.use('/', rosterRoutes);
 app.use('/', rollCallRoutes);
 app.use('/', syncEventRoutes);
+app.use('/', adminRoutes);
 
 // Serve admin dashboard; must come after API routes so /api/* routes win first.
 app.get('/admin', function (req, res) {

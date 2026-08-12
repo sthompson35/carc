@@ -1038,6 +1038,17 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                 </div>
 
                 <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">🌐 Runtime Backend</div>
+                        <div class="panel-actions">
+                            <button class="btn btn-outline btn-sm" id="admBtnRefreshRuntime">🔄 Refresh</button>
+                            <button class="btn btn-outline btn-sm" id="admBtnBackupNow" disabled>💾 Backup Runtime Now</button>
+                        </div>
+                    </div>
+                    <div id="admRuntimePanel"><div class="text-muted text-sm">Not connected — configure a runtime endpoint in Governance first.</div></div>
+                </div>
+
+                <div class="panel">
                     <div class="panel-header"><div class="panel-title">🧰 Tools</div></div>
 
                     <div class="tool-block">
@@ -4597,12 +4608,61 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
         reader.readAsText(file);
     }
 
+    function renderAdminRuntimePanel() {
+        var panel = document.getElementById('admRuntimePanel');
+        var backupBtn = document.getElementById('admBtnBackupNow');
+        if (!panel) return;
+        var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (!ep.url) {
+            panel.innerHTML = '<div class="text-muted text-sm">Not connected — configure a runtime endpoint in Governance first.</div>';
+            if (backupBtn) backupBtn.disabled = true;
+            return;
+        }
+        if (backupBtn) backupBtn.disabled = false;
+        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        var base = ep.url.replace(/\/+$/, '');
+        panel.innerHTML = '<div class="text-muted text-sm">Loading…</div>';
+
+        Promise.all([
+            fetch(base + '/health', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+            fetch(base + '/api/sync-status', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+            fetch(base + '/api/sync-events?limit=5', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+            fetch(base + '/api/admin/backups', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; })
+        ]).then(function(res) {
+            var health = res[0], status = res[1], events = res[2], backups = res[3];
+            var stateCls = { CURRENT:'audit-ok', STALE:'audit-warn', ERROR:'audit-bad', UNSYNCED:'' };
+            var html = '';
+            html += '<div class="kv-row"><span>Backend health</span><span class="'+(health && health.status==='OK'?'audit-ok':'audit-bad')+'">'+(health ? esc(health.status)+' · '+esc(health.verifications)+' verifications' : 'UNREACHABLE')+'</span></div>';
+            if (status) {
+                html += '<div class="kv-row"><span>Roster state</span><span class="'+(stateCls[status.roster && status.roster.state]||'')+'">'+esc((status.roster && status.roster.state) || '—')+'</span></div>';
+                html += '<div class="kv-row"><span>Roll-call state</span><span class="'+(stateCls[status.roll_calls && status.roll_calls.state]||'')+'">'+esc((status.roll_calls && status.roll_calls.state) || '—')+'</span></div>';
+            }
+            if (events && events.rows && events.rows.length) {
+                html += '<div class="text-xs text-muted mt-2 mb-1">RECENT SYNC EVENTS</div>';
+                html += events.rows.slice(0,5).map(function(r){
+                    return '<div class="kv-row"><span class="text-xs">'+esc(r.syncType)+' · '+esc(r.initiator)+'</span><span class="text-xs '+(r.result==='success'?'audit-ok':'audit-bad')+'">'+esc(r.result)+' · '+esc(fmtDate(r.startedAt))+'</span></div>';
+                }).join('');
+            }
+            if (backups) {
+                var bList = backups.backups || [];
+                html += '<div class="text-xs text-muted mt-2 mb-1">RECENT BACKUPS ('+bList.length+')</div>';
+                html += bList.length ? bList.slice(0,5).map(function(b){
+                    return '<div class="kv-row"><span class="text-xs">'+esc(b.file)+'</span><span class="text-xs">'+Math.round(b.sizeBytes/1024)+' KB · '+esc(fmtDate(b.createdAt))+'</span></div>';
+                }).join('') : '<div class="text-xs text-muted">No backups yet.</div>';
+            }
+            panel.innerHTML = html || '<div class="text-muted text-sm">No data returned.</div>';
+        });
+    }
+
     function renderAdminPage() {
         if (!DATA.settings) DATA.settings = { defaultPageSize: 8 };
         renderAdminOverview();
         renderAdminTypeRegistry();
         renderAdminDataSummary();
         renderAdminLogGrid();
+        renderAdminRuntimePanel();
         var themeToggle = document.getElementById('admThemeToggle');
         if (themeToggle) themeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark';
         var autoToggle = document.getElementById('admAutoMode');
@@ -4638,6 +4698,31 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             saveData(); renderAttentionPanel();
         });
 
+        document.getElementById('admBtnRefreshRuntime').addEventListener('click', renderAdminRuntimePanel);
+        document.getElementById('admBtnBackupNow').addEventListener('click', function () {
+            var ep = (DATA.governance && DATA.governance.endpoint) || {};
+            if (!ep.url) { showToast('error', '❌ No endpoint URL configured'); return; }
+            var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+            var headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+            var base = ep.url.replace(/\/+$/, '');
+            var btn = document.getElementById('admBtnBackupNow');
+            btn.disabled = true; btn.textContent = '…';
+            fetch(base + '/api/admin/backup', { method:'POST', headers:headers, body: JSON.stringify({}) })
+                .then(function(r) { return r.json().then(function(d){ return { ok:r.ok, data:d }; }); })
+                .then(function(res) {
+                    if (!res.ok) throw new Error((res.data && res.data.reason) || 'backup failed');
+                    showToast('success', '✅ Backup created: ' + res.data.backupFile + ' (' + Math.round(res.data.sizeBytes/1024) + ' KB)');
+                    addGovernanceLedger('endpoint', 'Runtime backup created: ' + res.data.backupFile);
+                    saveData();
+                    btn.disabled = false; btn.textContent = '💾 Backup Runtime Now';
+                    renderAdminRuntimePanel();
+                })
+                .catch(function(err) {
+                    showToast('error', '❌ Backup failed: ' + err.message);
+                    btn.disabled = false; btn.textContent = '💾 Backup Runtime Now';
+                });
+        });
         document.getElementById('admBtnExportJson').addEventListener('click', exportData);
         document.getElementById('admBtnImportJson').addEventListener('click', function () { document.getElementById('importFileInput').click(); });
         document.getElementById('admBtnExportParticipantsCsv').addEventListener('click', exportParticipantsCsv);

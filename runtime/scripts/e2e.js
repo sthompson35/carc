@@ -299,8 +299,28 @@ async function run() {
     assert(data.roster.state === 'STALE', 'backdating the latest roster sync past the threshold flips state to STALE (' + data.roster.state + ')');
     assert(data.roll_calls.state === 'CURRENT', 'roll_calls staleness is judged independently of roster (' + data.roll_calls.state + ')');
 
-    // ── 14. revoke temp token; confirm 403 ───────────────────────
-    console.log('\n[14] Revoke temp token → confirm 403');
+    // ── 14. admin backup ───────────────────────────────────────────
+    console.log('\n[14] Admin backup');
+    const fs = require('fs');
+    const path = require('path');
+    t = await authReq(port, '/api/admin/backup', 'POST', tmpToken, {});
+    data = t.json();
+    assert(t.status === 200 && typeof data.backupFile === 'string', 'POST /api/admin/backup → 200, returns a backupFile name');
+    assert(typeof data.sizeBytes === 'number' && data.sizeBytes > 0, 'backup file has a real, non-zero size');
+    const { DEFAULT_BACKUP_DIR } = require('../scripts/backup');
+    const backupPath = path.join(DEFAULT_BACKUP_DIR, data.backupFile);
+    assert(fs.existsSync(backupPath), 'the backup file actually exists on disk at ' + backupPath);
+
+    const createdBackupFile = data.backupFile;
+    t = await authReq(port, '/api/admin/backups', 'GET', tmpToken);
+    data = t.json();
+    assert(Array.isArray(data.backups) && data.backups.some(b => b.file === createdBackupFile), 'the just-created backup appears in GET /api/admin/backups');
+
+    if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+    console.log('     e2e-created backup file cleaned up');
+
+    // ── 15. revoke temp token; confirm 403 ───────────────────────
+    console.log('\n[15] Revoke temp token → confirm 403');
     db.prepare('UPDATE tokens SET active = 0 WHERE id = ?').run(tmpId);
     t = await authReq(port, '/api/stats', 'GET', tmpToken);
     assert(t.status === 403, 'revoked token → 403');

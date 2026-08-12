@@ -106,6 +106,14 @@ async function main() {
     console.assert(t.status === 401, '/api/sync-status should require auth');
     console.log('GET /api/sync-status', t.status, 'auth guard ok');
 
+    t = await req({ ...base, path: '/api/admin/backup', method: 'POST', headers: { 'Content-Type': 'application/json' } }, '{}');
+    console.assert(t.status === 401, '/api/admin/backup should require auth');
+    console.log('POST /api/admin/backup', t.status, 'auth guard ok');
+
+    t = await req({ ...base, path: '/api/admin/backups', method: 'GET' });
+    console.assert(t.status === 401, '/api/admin/backups should require auth');
+    console.log('GET /api/admin/backups', t.status, 'auth guard ok');
+
     console.log('\nAll smoke tests passed.');
     process.exit(0);
 }
