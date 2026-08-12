@@ -1371,7 +1371,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                 lastRun: minsAgo(35),
                 totalRuns: 4,
                 chatLog: [
-                    { role: 'agent', text: 'Council Roll Call Agent online. Ask me about participants, conversations, or attendance — or say "start roll call".', time: nowTime(), at: new Date().toISOString() }
+                    { id: uid('msg'), role: 'agent', text: 'Council Roll Call Agent online. Ask me about participants, conversations, or attendance — or say "start roll call".', time: nowTime(), at: new Date().toISOString() }
                 ]
             },
             totalMessages: 1284,
@@ -3279,7 +3279,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
         if (el) el.remove();
     }
     function clearChatHistory() {
-        DATA.agent.chatLog = [{ role: 'agent', text: 'Chat cleared. Address @CALLSIGN, ask about role/mission/tasks/status, or broadcast to ALL.', time: nowTime(), at: new Date().toISOString() }];
+        DATA.agent.chatLog = [{ id: uid('msg'), role: 'agent', text: 'Chat cleared. Address @CALLSIGN, ask about role/mission/tasks/status, or broadcast to ALL.', time: nowTime(), at: new Date().toISOString() }];
         saveData(); renderChat();
         showToast('info', '🗑️ Chat history cleared');
     }
@@ -3435,7 +3435,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
         text = (text || document.getElementById('chatInput').value).trim();
         if (!text) return;
         chatHistoryPush(text);
-        DATA.agent.chatLog.push({ role: 'user', text: text, time: nowTime(), at: new Date().toISOString() });
+        DATA.agent.chatLog.push({ id: uid('msg'), role: 'user', text: text, time: nowTime(), at: new Date().toISOString() });
         renderChat();
         document.getElementById('chatInput').value = '';
         showTypingIndicator();
@@ -3443,7 +3443,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             var targetEl = document.getElementById('chatTarget');
             var reply = agentRespond(text, targetEl ? targetEl.value : 'AUTO');
             hideTypingIndicator();
-            DATA.agent.chatLog.push({ role: 'agent', text: reply, time: nowTime(), at: new Date().toISOString() });
+            DATA.agent.chatLog.push({ id: uid('msg'), role: 'agent', text: reply, time: nowTime(), at: new Date().toISOString() });
             if (DATA.agent.chatLog.length > 100) DATA.agent.chatLog = DATA.agent.chatLog.slice(-100);
             saveData(); renderChat();
         }, 600);
@@ -3815,8 +3815,10 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             var statusTxt = ep.lastTestResult === 'OK' ? 'CONNECTED' : ep.lastTestResult === 'ERROR' ? 'ERROR' : 'NOT_TESTED';
             var rs = ep.lastRosterSync;
             var rcs = ep.lastRollCallSync;
+            var cs = ep.lastChatSync;
             var rsErr = ep.lastRosterSyncError;
             var rcsErr = ep.lastRollCallSyncError;
+            var csErr = ep.lastChatSyncError;
             var as = autoSyncSettings();
             // Stale threshold applies regardless of auto-sync mode: 2x the auto interval while
             // auto-sync is on (a missed cycle should show up quickly), a generous 24h grace
@@ -3833,17 +3835,20 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             }
             var rosterTrust = trustState(rs, rsErr);
             var rcTrust = trustState(rcs, rcsErr);
+            var chatTrust = trustState(cs, csErr);
             var stateCls = { CURRENT: 'audit-ok', SUCCESS: 'audit-ok', STALE: 'audit-warn', ERROR: 'audit-bad', UNSYNCED: '' };
-            var combinedLastResult = (rosterTrust.lastResult === 'ERROR' || rcTrust.lastResult === 'ERROR') ? 'ERROR'
-                : (rosterTrust.lastResult === 'SUCCESS' || rcTrust.lastResult === 'SUCCESS') ? 'SUCCESS' : '—';
+            var combinedLastResult = (rosterTrust.lastResult === 'ERROR' || rcTrust.lastResult === 'ERROR' || chatTrust.lastResult === 'ERROR') ? 'ERROR'
+                : (rosterTrust.lastResult === 'SUCCESS' || rcTrust.lastResult === 'SUCCESS' || chatTrust.lastResult === 'SUCCESS') ? 'SUCCESS' : '—';
             epEl.innerHTML =
                 '<div class="kv-row"><span>Endpoint URL</span><b class="text-xs truncate" style="max-width:220px;display:block;">'+esc(ep.url||'—')+'</b></div>'+
                 '<div class="kv-row"><span>Bearer Token</span><b>'+(ep.tokenSet?'•••• configured':'NOT SET')+'</b></div>'+
                 '<div class="kv-row"><span>Status</span><span class="'+statusCls+'">'+statusTxt+(ep.lastTestAt?' · '+esc(fmtDate(ep.lastTestAt)):'')+'</span></div>'+
                 (rs ? '<div class="kv-row"><span>Roster Sync</span><span class="text-xs">'+esc(rs.synced)+'/'+esc(rs.submitted)+(rs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(rs.syncedAt))+'</span></div>' : '')+
                 (rcs ? '<div class="kv-row"><span>Roll Call Sync</span><span class="text-xs">'+esc(rcs.synced)+'/'+esc(rcs.submitted)+(rcs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(rcs.syncedAt))+'</span></div>' : '')+
+                (cs ? '<div class="kv-row"><span>Chat Sync</span><span class="text-xs">'+esc(cs.synced)+'/'+esc(cs.submitted)+(cs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(cs.syncedAt))+'</span></div>' : '')+
                 '<div class="kv-row"><span>Roster state</span><span class="'+(stateCls[rosterTrust.state]||'')+'">'+rosterTrust.state+'</span></div>'+
                 '<div class="kv-row"><span>Roll-call state</span><span class="'+(stateCls[rcTrust.state]||'')+'">'+rcTrust.state+'</span></div>'+
+                '<div class="kv-row"><span>Chat state</span><span class="'+(stateCls[chatTrust.state]||'')+'">'+chatTrust.state+'</span></div>'+
                 '<div class="kv-row"><span>Last result</span><span class="'+(stateCls[combinedLastResult]||'')+'">'+combinedLastResult+'</span></div>'+
                 '<div class="kv-row"><span>Next sync</span><span class="text-xs">'+(as.enabled && as.nextAttemptAt ? esc(fmtDate(as.nextAttemptAt)) : 'MANUAL')+'</span></div>'+
                 '<div class="kv-row"><span>Auto-sync</span><label class="text-xs" style="display:flex;align-items:center;gap:5px;cursor:pointer;">'+
@@ -3856,6 +3861,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                     '<button class="btn btn-primary btn-sm" id="btnSubmitVerification"'+(canSubmit?'':' disabled')+'>📤 Submit for Verification</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnSyncRoster"'+(configured?'':' disabled')+'>🔄 Sync Roster to Runtime</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnSyncRollCalls"'+(configured?'':' disabled')+'>🗓️ Sync Roll Calls to Runtime</button>'+
+                    '<button class="btn btn-outline btn-sm" id="btnSyncChat"'+(configured?'':' disabled')+'>💬 Sync Chat to Runtime</button>'+
                     (configured && (ep.url.startsWith('http://')||ep.url.startsWith('https://')) ? '<a href="'+esc(ep.url)+'/admin" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">🌐 Open Admin</a>' : '')+
                 '</div>'+
                 '<div class="text-xs text-muted mt-1">Bearer token is stored in browser localStorage only — never included in evidence exports. Auto-sync mutates runtime state on a timer once enabled — off by default.</div>';
@@ -3864,6 +3870,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             if (canSubmit) document.getElementById('btnSubmitVerification').addEventListener('click', submitForExternalVerification);
             if (configured) document.getElementById('btnSyncRoster').addEventListener('click', function(){ syncRosterToRuntime(); });
             if (configured) document.getElementById('btnSyncRollCalls').addEventListener('click', function(){ syncRollCallsToRuntime(); });
+            if (configured) document.getElementById('btnSyncChat').addEventListener('click', function(){ syncChatToRuntime(); });
             document.getElementById('chkAutoSync').addEventListener('change', function(e){ toggleAutoSync(e.target.checked); });
         }
         var vrEl = document.getElementById('govVerificationResponse');
@@ -4042,6 +4049,46 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             });
     }
 
+    function syncChatToRuntime(opts) {
+        opts = opts || {};
+        var initiator = opts.initiator === 'auto' ? 'auto' : 'manual';
+        var silent = !!opts.silent;
+        var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (!ep.url) { if (!silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ ok:false, error:'NO_ENDPOINT' }); }
+        var records = (DATA.agent.chatLog || []).filter(function(m) { return m.id; }).map(function(m) {
+            return { id: m.id, role: m.role, text: m.text, occurredAt: m.at };
+        });
+        if (!records.length) { if (!silent) showToast('error', '❌ No chat messages to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
+        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        var base = ep.url.replace(/\/+$/, '');
+        var btn = silent ? null : document.getElementById('btnSyncChat');
+        if (btn) { btn.disabled = true; btn.textContent = '…'; }
+        var ctrl = new AbortController();
+        var tid = setTimeout(function(){ ctrl.abort(); }, 15000);
+        return fetch(base + '/api/chat/sync', { method:'POST', headers:headers, body: JSON.stringify({ records: records, initiator: initiator }), signal: ctrl.signal })
+            .then(function(r) { return r.json().then(function(d){ return { ok:r.ok, status:r.status, data:d }; }); })
+            .then(function(res) {
+                clearTimeout(tid);
+                if (!res.ok) throw new Error((res.data && (res.data.reason || res.data.error)) || ('HTTP ' + res.status));
+                ep.lastChatSync = { syncedAt: res.data.syncedAt, synced: res.data.synced, submitted: res.data.submitted, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Chat sync → ' + res.data.inserted + ' inserted, ' + res.data.updated + ' updated, ' + res.data.unchanged + ' unchanged');
+                saveData(); renderGovernancePage();
+                if (!silent) showToast('success', '✅ Synced ' + res.data.synced + '/' + res.data.submitted + ' chat message(s)');
+                return { ok:true, data:res.data };
+            })
+            .catch(function(err) {
+                clearTimeout(tid);
+                var msg = (err && err.name === 'AbortError') ? 'timeout after 15s' : (err.message || 'network error');
+                ep.lastChatSyncError = { at: new Date().toISOString(), message: msg, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Chat sync failed: ' + msg);
+                saveData(); renderGovernancePage();
+                if (!silent) showToast('error', '❌ Chat sync failed: ' + msg);
+                return { ok:false, error:msg };
+            });
+    }
+
     function syncRosterToRuntime(opts) {
         opts = opts || {};
         var initiator = opts.initiator === 'auto' ? 'auto' : 'manual';
@@ -4113,7 +4160,8 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
         if (!ep.url) { scheduleNextAutoSync(); return; }
         Promise.all([
             syncRosterToRuntime({ initiator: 'auto', silent: true }),
-            syncRollCallsToRuntime({ initiator: 'auto', silent: true })
+            syncRollCallsToRuntime({ initiator: 'auto', silent: true }),
+            syncChatToRuntime({ initiator: 'auto', silent: true })
         ]).then(function(results) {
             var failed = results.filter(function(r) { return !r.ok; });
             if (failed.length) {

@@ -282,12 +282,41 @@ async function run() {
     db.prepare('DELETE FROM roll_calls WHERE id = ?').run(rcId);
     console.log('     roll call test record cleaned up (sync_events audit rows intentionally left — append-only trail)');
 
-    // ── 13. sync-status (server-authoritative CURRENT/STALE/UNSYNCED) ─
-    console.log('\n[13] Sync status');
+    // ── 13. chat sync round-trip ────────────────────────────────────
+    console.log('\n[13] Chat sync round-trip');
+    const msgId = 'E2E-MSG-' + Date.now();
+    const msgAt = new Date().toISOString();
+    t = await authReq(port, '/api/chat/sync', 'POST', tmpToken, {
+        records: [{ id: msgId, role: 'user', text: 'e2e chat drill', occurredAt: msgAt }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.synced === 1 && data.inserted === 1, 'POST /api/chat/sync → 1 record inserted');
+    assert(typeof data.executionId === 'string' && data.executionId.startsWith('SYNC-CHAT-'), 'chat sync response carries a chat-scoped executionId');
+
+    t = await authReq(port, '/api/chat?limit=100', 'GET', tmpToken);
+    data = t.json();
+    const chatRow = (data.rows || []).find(r => r.id === msgId);
+    assert(!!chatRow && chatRow.text === 'e2e chat drill', 'GET /api/chat reflects the synced message');
+
+    // idempotency: resubmitting the identical message must not mutate it
+    t = await authReq(port, '/api/chat/sync', 'POST', tmpToken, {
+        records: [{ id: msgId, role: 'user', text: 'e2e chat drill', occurredAt: msgAt }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.inserted === 0 && data.updated === 0 && data.unchanged === 1, 'repeat chat sync → 0 inserted, 0 updated, 1 unchanged (idempotent)');
+    const chatCountAfter = db.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE id = ?').get(msgId).n;
+    assert(chatCountAfter === 1, 'repeat chat sync does not duplicate the row');
+
+    db.prepare('DELETE FROM chat_messages WHERE id = ?').run(msgId);
+    console.log('     chat test record cleaned up');
+
+    // ── 14. sync-status (server-authoritative CURRENT/STALE/UNSYNCED) ─
+    console.log('\n[14] Sync status');
     t = await authReq(port, '/api/sync-status', 'GET', tmpToken);
     data = t.json();
     assert(data.roster && data.roster.state === 'CURRENT', 'fresh roster sync reports state=CURRENT (' + (data.roster && data.roster.state) + ')');
     assert(data.roll_calls && data.roll_calls.state === 'CURRENT', 'fresh roll-call sync reports state=CURRENT (' + (data.roll_calls && data.roll_calls.state) + ')');
+    assert(data.chat && data.chat.state === 'CURRENT', 'fresh chat sync reports state=CURRENT (' + (data.chat && data.chat.state) + ')');
     assert(typeof data.staleThresholdMs === 'number', 'staleThresholdMs is reported (server policy, not client-derived)');
 
     // backdate the latest roster sync_events row past the threshold and confirm the server
@@ -299,8 +328,8 @@ async function run() {
     assert(data.roster.state === 'STALE', 'backdating the latest roster sync past the threshold flips state to STALE (' + data.roster.state + ')');
     assert(data.roll_calls.state === 'CURRENT', 'roll_calls staleness is judged independently of roster (' + data.roll_calls.state + ')');
 
-    // ── 14. admin backup ───────────────────────────────────────────
-    console.log('\n[14] Admin backup');
+    // ── 15. admin backup ───────────────────────────────────────────
+    console.log('\n[15] Admin backup');
     const fs = require('fs');
     const path = require('path');
     t = await authReq(port, '/api/admin/backup', 'POST', tmpToken, {});
@@ -319,8 +348,8 @@ async function run() {
     if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
     console.log('     e2e-created backup file cleaned up');
 
-    // ── 15. revoke temp token; confirm 403 ───────────────────────
-    console.log('\n[15] Revoke temp token → confirm 403');
+    // ── 16. revoke temp token; confirm 403 ───────────────────────
+    console.log('\n[16] Revoke temp token → confirm 403');
     db.prepare('UPDATE tokens SET active = 0 WHERE id = ?').run(tmpId);
     t = await authReq(port, '/api/stats', 'GET', tmpToken);
     assert(t.status === 403, 'revoked token → 403');

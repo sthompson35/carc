@@ -113,6 +113,16 @@ function initDb() {
 
         CREATE INDEX IF NOT EXISTS idx_sync_events_type    ON sync_events(sync_type);
         CREATE INDEX IF NOT EXISTS idx_sync_events_started ON sync_events(started_at);
+
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id            TEXT    PRIMARY KEY,
+            role          TEXT,
+            text          TEXT,
+            occurred_at   TEXT,
+            synced_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_chat_occurred ON chat_messages(occurred_at);
     `);
 
     // Migration: sync_events predates execution_id (added for cross-referencing a sync
