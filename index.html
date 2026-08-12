@@ -3387,8 +3387,11 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             var recent = DATA.conversations.slice(0, 3).map(function (c) { return c.title; }).join(', ');
             return 'There are ' + DATA.conversations.length + ' conversations. Most recent: ' + recent + '.';
         }
-        if (/help|what can you do/.test(q)) return 'Agent Chat routes by @CALLSIGN or target selector. Ask any member for status, role, purpose, mission, duties, tasks, outputs, or identity. Choose ALL or say "everyone" for a persisted roster broadcast. Commands: "@CALLSIGN mark present/absent", "create conversation: <title>", "set alert threshold to N", "pause/resume auto mode", "export data", "export participants". Local responses are NOT_RUNTIME_VERIFIED.';
-        return 'No canonical target resolved. Address a member such as "@VEX: what is your status?", select ALL for a broadcast, or type "help".';
+        if (/help|what can you do/.test(q)) return 'Agent Chat routes by @CALLSIGN or target selector. Ask any member for status, role, purpose, mission, duties, tasks, outputs, or identity. Choose ALL or say "everyone" for a persisted roster broadcast — an unaddressed message broadcasts to ALL by default. Commands: "@CALLSIGN mark present/absent", "create conversation: <title>", "set alert threshold to N", "pause/resume auto mode", "export data", "export participants". Local responses are NOT_RUNTIME_VERIFIED.';
+        // No @CALLSIGN, no recognized keyword, and no explicit target — default to a broadcast
+        // rather than erroring, so a plain unaddressed message still does something useful.
+        startRollCall(query);
+        return 'No @CALLSIGN or ALL specified — broadcasting to all active canonical identities by default. Responses were persisted to the roll-call transcript and are LOCAL_RULE_ENGINE · NOT_RUNTIME_VERIFIED. Address @CALLSIGN to target one member, or type "help" for other commands.';
     }
     function sendChat(text) {
         text = (text || document.getElementById('chatInput').value).trim();
