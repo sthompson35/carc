@@ -280,6 +280,16 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75rem;ba
           </div>
           <div class="pagination" id="rosterPag"></div>
         </div>
+        <div class="two-col">
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title">📈 Readiness Trend</div></div>
+            <div class="chart-wrap" id="readinessChart"><div class="empty" style="width:100%;align-self:center;">No data yet.</div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title">🗓️ Roll-Call Attendance Trend</div></div>
+            <div class="chart-wrap" id="rollCallChart"><div class="empty" style="width:100%;align-self:center;">No data yet.</div></div>
+          </div>
+        </div>
         <div class="panel">
           <div class="panel-header"><div class="panel-title">🗓️ Recent Roll Calls</div></div>
           <div class="table-wrap">
@@ -573,15 +583,54 @@ document.getElementById('selAutoInterval').addEventListener('change',function(){
 function loadRoster(){
     if(!BASE)return;
     const qs='?page='+rosterPage+'&limit=25'+(rosterReadinessFilter!==''?'&readiness='+rosterReadinessFilter:'')+(rosterKindFilter!==''?'&kind='+rosterKindFilter:'');
-    Promise.all([api('/api/roster'+qs), api('/api/readiness'), api('/api/roll-calls?limit=8')])
-        .then(function(res){
-            const rosterData=res[0], readinessData=res[1], rcData=res[2];
-            allRoster=rosterData.rows||[];
-            document.getElementById('rosterCount').textContent=rosterData.total+' total';
-            renderRosterTable(rosterData);
-            renderRosterStats(readinessData);
-            renderRollCallTable(rcData.rows||[]);
-        }).catch(function(e){toast('err','Roster: '+e.message);});
+    Promise.all([
+        api('/api/roster'+qs), api('/api/readiness'), api('/api/roll-calls?limit=8'),
+        api('/api/readiness/history?days=14'), api('/api/roll-calls/stats')
+    ]).then(function(res){
+        const rosterData=res[0], readinessData=res[1], rcData=res[2], historyData=res[3], rcStats=res[4];
+        allRoster=rosterData.rows||[];
+        document.getElementById('rosterCount').textContent=rosterData.total+' total';
+        renderRosterTable(rosterData);
+        renderRosterStats(readinessData);
+        renderRollCallTable(rcData.rows||[]);
+        renderReadinessChart(historyData.rows||[]);
+        renderRollCallChart(rcStats.byDay||[]);
+    }).catch(function(e){toast('err','Roster: '+e.message);});
+}
+function renderReadinessChart(rows){
+    const el=document.getElementById('readinessChart');
+    if(!rows.length){el.innerHTML='<div class="empty" style="width:100%;align-self:center;">No readiness history yet.</div>';return;}
+    const byDay={};
+    rows.forEach(function(r){
+        const d=byDay[r.day]=byDay[r.day]||{ready:0,total:0};
+        d.total+=r.n;
+        if(r.readiness==='MISSION_READY')d.ready+=r.n;
+    });
+    const days=Object.keys(byDay).sort();
+    el.innerHTML=days.map(function(day){
+        const d=byDay[day];
+        const rP=Math.round((d.ready/d.total)*100);
+        const oP=100-rP;
+        return '<div class="c-col">' +
+            '<div class="c-bar-track">' +
+            '<div class="c-bar v-bar" style="height:'+rP+'%;" title="'+d.ready+' mission-ready"></div>' +
+            '<div class="c-bar r-bar" style="height:'+oP+'%;" title="'+(d.total-d.ready)+' other"></div>' +
+            '</div>' +
+            '<div class="c-day">'+esc(day.slice(5))+'</div></div>';
+    }).join('');
+}
+function renderRollCallChart(byDay){
+    const el=document.getElementById('rollCallChart');
+    if(!byDay.length){el.innerHTML='<div class="empty" style="width:100%;align-self:center;">No roll-call history yet.</div>';return;}
+    el.innerHTML=byDay.map(function(d){
+        const rate=Math.round(d.avgRate||0);
+        return '<div class="c-col">' +
+            '<div class="c-bar-track">' +
+            '<div class="c-bar v-bar" style="height:'+rate+'%;" title="'+rate+'% avg attendance"></div>' +
+            '<div class="c-bar r-bar" style="height:'+(100-rate)+'%;"></div>' +
+            '</div>' +
+            '<div class="c-day">'+esc(d.day?d.day.slice(5):'')+'</div></div>';
+    }).join('');
 }
 function renderRosterStats(d){
     const el=document.getElementById('rosterStats');
