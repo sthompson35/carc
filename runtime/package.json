@@ -1,0 +1,31 @@
+{
+  "name": "carc-runtime",
+  "version": "1.0.0",
+  "description": "Governed external runtime endpoint for CARC v3.16.0+ canary verification",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "setup": "node scripts/setup.js",
+    "token": "node scripts/token.js",
+    "smoke": "node scripts/smoke.js",
+    "e2e": "node scripts/e2e.js",
+    "seed-roster": "node scripts/seed-roster.js",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js",
+    "dr-drill": "node scripts/dr-drill.js",
+    "rotate-secret": "node scripts/rotate-signing-secret.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.6.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true
+  }
+}

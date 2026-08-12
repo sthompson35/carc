@@ -1,0 +1,13 @@
+services:
+  carc-runtime:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      VERIFIER_ID: "CARC-RUNTIME-VERIFIER-001"
+      SIGNING_SECRET: "change-this-to-a-strong-random-secret"
+      CORS_ORIGIN: "*"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
