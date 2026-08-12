@@ -3740,12 +3740,22 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             var statusTxt = ep.lastTestResult === 'OK' ? 'CONNECTED' : ep.lastTestResult === 'ERROR' ? 'ERROR' : 'NOT_TESTED';
             var rs = ep.lastRosterSync;
             var rcs = ep.lastRollCallSync;
+            var as = autoSyncSettings();
+            var staleMs = AUTO_SYNC_BASE_INTERVAL_MS * 2;
+            var lastSyncTs = [rs, rcs].filter(Boolean).map(function(s){ return new Date(s.syncedAt).getTime(); });
+            var oldestSync = lastSyncTs.length ? Math.min.apply(null, lastSyncTs) : null;
+            var isStale = as.enabled && oldestSync != null && (Date.now() - oldestSync) > staleMs;
             epEl.innerHTML =
                 '<div class="kv-row"><span>Endpoint URL</span><b class="text-xs truncate" style="max-width:220px;display:block;">'+esc(ep.url||'—')+'</b></div>'+
                 '<div class="kv-row"><span>Bearer Token</span><b>'+(ep.tokenSet?'•••• configured':'NOT SET')+'</b></div>'+
                 '<div class="kv-row"><span>Status</span><span class="'+statusCls+'">'+statusTxt+(ep.lastTestAt?' · '+esc(fmtDate(ep.lastTestAt)):'')+'</span></div>'+
-                (rs ? '<div class="kv-row"><span>Roster Sync</span><span class="text-xs">'+esc(rs.synced)+'/'+esc(rs.submitted)+' · '+esc(fmtDate(rs.syncedAt))+'</span></div>' : '')+
-                (rcs ? '<div class="kv-row"><span>Roll Call Sync</span><span class="text-xs">'+esc(rcs.synced)+'/'+esc(rcs.submitted)+' · '+esc(fmtDate(rcs.syncedAt))+'</span></div>' : '')+
+                (rs ? '<div class="kv-row"><span>Roster Sync</span><span class="text-xs">'+esc(rs.synced)+'/'+esc(rs.submitted)+(rs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(rs.syncedAt))+'</span></div>' : '')+
+                (rcs ? '<div class="kv-row"><span>Roll Call Sync</span><span class="text-xs">'+esc(rcs.synced)+'/'+esc(rcs.submitted)+(rcs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(rcs.syncedAt))+'</span></div>' : '')+
+                '<div class="kv-row"><span>Auto-sync</span><label class="text-xs" style="display:flex;align-items:center;gap:5px;cursor:pointer;">'+
+                    '<input type="checkbox" id="chkAutoSync"'+(as.enabled?' checked':'')+(configured?'':' disabled')+'> '+
+                    (as.enabled ? (isStale ? '<span class="audit-bad">ON · STALE</span>' : '<span class="audit-ok">ON</span>') : 'OFF')+
+                    (as.enabled && as.nextAttemptAt ? ' · next '+esc(fmtDate(as.nextAttemptAt)) : '')+
+                '</label></div>'+
                 '<div class="flex gap-1 mt-1">'+
                     '<button class="btn btn-outline btn-sm" id="btnConfigEndpoint">⚙️ Configure</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnTestEndpoint"'+(configured?'':' disabled')+'>🔌 Test</button>'+
@@ -3754,12 +3764,13 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                     '<button class="btn btn-outline btn-sm" id="btnSyncRollCalls"'+(configured?'':' disabled')+'>🗓️ Sync Roll Calls to Runtime</button>'+
                     (configured && (ep.url.startsWith('http://')||ep.url.startsWith('https://')) ? '<a href="'+esc(ep.url)+'/admin" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">🌐 Open Admin</a>' : '')+
                 '</div>'+
-                '<div class="text-xs text-muted mt-1">Bearer token is stored in browser localStorage only — never included in evidence exports.</div>';
+                '<div class="text-xs text-muted mt-1">Bearer token is stored in browser localStorage only — never included in evidence exports. Auto-sync mutates runtime state on a timer once enabled — off by default.</div>';
             document.getElementById('btnConfigEndpoint').addEventListener('click', openEndpointConfigModal);
             if (configured) document.getElementById('btnTestEndpoint').addEventListener('click', testEndpointConnection);
             if (canSubmit) document.getElementById('btnSubmitVerification').addEventListener('click', submitForExternalVerification);
-            if (configured) document.getElementById('btnSyncRoster').addEventListener('click', syncRosterToRuntime);
-            if (configured) document.getElementById('btnSyncRollCalls').addEventListener('click', syncRollCallsToRuntime);
+            if (configured) document.getElementById('btnSyncRoster').addEventListener('click', function(){ syncRosterToRuntime(); });
+            if (configured) document.getElementById('btnSyncRollCalls').addEventListener('click', function(){ syncRollCallsToRuntime(); });
+            document.getElementById('chkAutoSync').addEventListener('change', function(e){ toggleAutoSync(e.target.checked); });
         }
         var vrEl = document.getElementById('govVerificationResponse');
         if (vrEl) {
@@ -3894,72 +3905,148 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             });
     }
 
-    function syncRollCallsToRuntime() {
+    // Both sync functions return a Promise<{ok, error?}> so the auto-sync orchestrator can
+    // observe success/failure without depending on toasts or button DOM elements that only
+    // exist for a manual, user-clicked sync.
+    function syncRollCallsToRuntime(opts) {
+        opts = opts || {};
+        var initiator = opts.initiator === 'auto' ? 'auto' : 'manual';
+        var silent = !!opts.silent;
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
-        if (!ep.url) { showToast('error', '❌ No endpoint URL configured'); return; }
+        if (!ep.url) { if (!silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ ok:false, error:'NO_ENDPOINT' }); }
         var records = (DATA.rollCalls || []).map(function(r) {
             return { id: r.id, date: r.date, conv: r.conv, present: r.present, total: r.total, rate: r.rate, status: r.status, message: r.message, responseMode: r.responseMode };
         });
-        if (!records.length) { showToast('error', '❌ No roll calls to sync'); return; }
+        if (!records.length) { if (!silent) showToast('error', '❌ No roll calls to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
         var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         var base = ep.url.replace(/\/+$/, '');
-        var btn = document.getElementById('btnSyncRollCalls');
+        var btn = silent ? null : document.getElementById('btnSyncRollCalls');
         if (btn) { btn.disabled = true; btn.textContent = '…'; }
         var ctrl = new AbortController();
         var tid = setTimeout(function(){ ctrl.abort(); }, 15000);
-        fetch(base + '/api/roll-calls/sync', { method:'POST', headers:headers, body: JSON.stringify({ records: records }), signal: ctrl.signal })
+        return fetch(base + '/api/roll-calls/sync', { method:'POST', headers:headers, body: JSON.stringify({ records: records, initiator: initiator }), signal: ctrl.signal })
             .then(function(r) { return r.json().then(function(d){ return { ok:r.ok, status:r.status, data:d }; }); })
             .then(function(res) {
                 clearTimeout(tid);
                 if (!res.ok) throw new Error((res.data && (res.data.reason || res.data.error)) || ('HTTP ' + res.status));
-                ep.lastRollCallSync = { syncedAt: res.data.syncedAt, synced: res.data.synced, submitted: res.data.submitted };
-                addGovernanceLedger('endpoint', 'Roll call sync → ' + res.data.synced + '/' + res.data.submitted + ' record(s) synced');
+                ep.lastRollCallSync = { syncedAt: res.data.syncedAt, synced: res.data.synced, submitted: res.data.submitted, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Roll call sync → ' + res.data.inserted + ' inserted, ' + res.data.updated + ' updated, ' + res.data.unchanged + ' unchanged');
                 saveData(); renderGovernancePage();
-                showToast('success', '✅ Synced ' + res.data.synced + '/' + res.data.submitted + ' roll call record(s)');
+                if (!silent) showToast('success', '✅ Synced ' + res.data.synced + '/' + res.data.submitted + ' roll call record(s)');
+                return { ok:true, data:res.data };
             })
             .catch(function(err) {
                 clearTimeout(tid);
                 var msg = (err && err.name === 'AbortError') ? 'timeout after 15s' : (err.message || 'network error');
-                addGovernanceLedger('endpoint', 'Roll call sync failed: ' + msg);
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Roll call sync failed: ' + msg);
                 saveData(); renderGovernancePage();
-                showToast('error', '❌ Roll call sync failed: ' + msg);
+                if (!silent) showToast('error', '❌ Roll call sync failed: ' + msg);
+                return { ok:false, error:msg };
             });
     }
 
-    function syncRosterToRuntime() {
+    function syncRosterToRuntime(opts) {
+        opts = opts || {};
+        var initiator = opts.initiator === 'auto' ? 'auto' : 'manual';
+        var silent = !!opts.silent;
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
-        if (!ep.url) { showToast('error', '❌ No endpoint URL configured'); return; }
+        if (!ep.url) { if (!silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ ok:false, error:'NO_ENDPOINT' }); }
         var records = (DATA.participants || []).filter(function(p) { return p.serviceMemberId; }).map(function(p) {
             return { serviceMemberId: p.serviceMemberId, status: p.status, readiness: p.readiness, missionProfile: p.missionProfile };
         });
-        if (!records.length) { showToast('error', '❌ No roster records to sync'); return; }
+        if (!records.length) { if (!silent) showToast('error', '❌ No roster records to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
         var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         var base = ep.url.replace(/\/+$/, '');
-        var btn = document.getElementById('btnSyncRoster');
+        var btn = silent ? null : document.getElementById('btnSyncRoster');
         if (btn) { btn.disabled = true; btn.textContent = '…'; }
         var ctrl = new AbortController();
         var tid = setTimeout(function(){ ctrl.abort(); }, 15000);
-        fetch(base + '/api/roster/sync', { method:'POST', headers:headers, body: JSON.stringify({ records: records }), signal: ctrl.signal })
+        return fetch(base + '/api/roster/sync', { method:'POST', headers:headers, body: JSON.stringify({ records: records, initiator: initiator }), signal: ctrl.signal })
             .then(function(r) { return r.json().then(function(d){ return { ok:r.ok, status:r.status, data:d }; }); })
             .then(function(res) {
                 clearTimeout(tid);
                 if (!res.ok) throw new Error((res.data && (res.data.reason || res.data.error)) || ('HTTP ' + res.status));
-                ep.lastRosterSync = { syncedAt: res.data.syncedAt, synced: res.data.synced, submitted: res.data.submitted };
-                addGovernanceLedger('endpoint', 'Roster sync → ' + res.data.synced + '/' + res.data.submitted + ' record(s) matched');
+                ep.lastRosterSync = { syncedAt: res.data.syncedAt, synced: res.data.synced, submitted: res.data.submitted, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Roster sync → ' + res.data.updated + ' updated, ' + res.data.unchanged + ' unchanged, ' + res.data.unmatched + ' unmatched');
                 saveData(); renderGovernancePage();
-                showToast('success', '✅ Synced ' + res.data.synced + '/' + res.data.submitted + ' roster record(s)');
+                if (!silent) showToast('success', '✅ Synced ' + res.data.synced + '/' + res.data.submitted + ' roster record(s)');
+                return { ok:true, data:res.data };
             })
             .catch(function(err) {
                 clearTimeout(tid);
                 var msg = (err && err.name === 'AbortError') ? 'timeout after 15s' : (err.message || 'network error');
-                addGovernanceLedger('endpoint', 'Roster sync failed: ' + msg);
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Roster sync failed: ' + msg);
                 saveData(); renderGovernancePage();
-                showToast('error', '❌ Roster sync failed: ' + msg);
+                if (!silent) showToast('error', '❌ Roster sync failed: ' + msg);
+                return { ok:false, error:msg };
             });
+    }
+
+    // ---- Auto-sync: feature-flagged, off by default, with exponential backoff on failure ----
+    var AUTO_SYNC_BASE_INTERVAL_MS = 60000;
+    var AUTO_SYNC_MAX_BACKOFF_MS = 15 * 60000;
+    var AUTO_SYNC_MAX_FAILURES = 5;
+    var autoSyncTimer = null;
+    var autoSyncBackoffMs = 0;
+    var autoSyncFailureStreak = 0;
+
+    function autoSyncSettings() {
+        DATA.governance.endpoint = DATA.governance.endpoint || {};
+        DATA.governance.endpoint.autoSync = DATA.governance.endpoint.autoSync || { enabled: false };
+        return DATA.governance.endpoint.autoSync;
+    }
+    function stopAutoSync() {
+        if (autoSyncTimer) { clearTimeout(autoSyncTimer); autoSyncTimer = null; }
+    }
+    function scheduleNextAutoSync(delayMs) {
+        stopAutoSync();
+        var as = autoSyncSettings();
+        if (!as.enabled) return;
+        var delay = delayMs != null ? delayMs : (AUTO_SYNC_BASE_INTERVAL_MS + autoSyncBackoffMs);
+        as.nextAttemptAt = new Date(Date.now() + delay).toISOString();
+        autoSyncTimer = setTimeout(runAutoSyncCycle, delay);
+    }
+    function runAutoSyncCycle() {
+        var as = autoSyncSettings();
+        if (!as.enabled) return;
+        var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (!ep.url) { scheduleNextAutoSync(); return; }
+        Promise.all([
+            syncRosterToRuntime({ initiator: 'auto', silent: true }),
+            syncRollCallsToRuntime({ initiator: 'auto', silent: true })
+        ]).then(function(results) {
+            var failed = results.filter(function(r) { return !r.ok; });
+            if (failed.length) {
+                autoSyncFailureStreak++;
+                autoSyncBackoffMs = Math.min(AUTO_SYNC_MAX_BACKOFF_MS, (autoSyncBackoffMs || AUTO_SYNC_BASE_INTERVAL_MS) * 2);
+                if (autoSyncFailureStreak >= AUTO_SYNC_MAX_FAILURES) {
+                    as.enabled = false;
+                    addGovernanceLedger('endpoint', 'Auto-sync disabled automatically after ' + autoSyncFailureStreak + ' consecutive failures');
+                    saveData(); renderGovernancePage();
+                    showToast('error', '❌ Auto-sync disabled after ' + autoSyncFailureStreak + ' consecutive failures');
+                    return;
+                }
+            } else {
+                autoSyncFailureStreak = 0;
+                autoSyncBackoffMs = 0;
+            }
+            saveData(); renderGovernancePage();
+            scheduleNextAutoSync();
+        });
+    }
+    function toggleAutoSync(enabled) {
+        var as = autoSyncSettings();
+        as.enabled = enabled;
+        autoSyncFailureStreak = 0;
+        autoSyncBackoffMs = 0;
+        if (enabled) { addGovernanceLedger('endpoint', 'Auto-sync enabled (' + Math.round(AUTO_SYNC_BASE_INTERVAL_MS/1000) + 's interval)'); }
+        else { addGovernanceLedger('endpoint', 'Auto-sync disabled'); stopAutoSync(); as.nextAttemptAt = null; }
+        saveData(); renderGovernancePage();
+        if (enabled) scheduleNextAutoSync(2000);
     }
 
     // The Independent Verification requirement is system-managed: it can only be flipped to
@@ -5039,6 +5126,10 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
         navigate(location.hash.slice(1) || 'dashboard');
         renderAll();
         renderChat();
+
+        if (DATA.governance && DATA.governance.endpoint && DATA.governance.endpoint.autoSync && DATA.governance.endpoint.autoSync.enabled && DATA.governance.endpoint.url) {
+            scheduleNextAutoSync(5000);
+        }
 
         setInterval(function () { updateClock(); checkAgentSchedule(); }, 1000);
         setInterval(function () { renderStats(); if ((location.hash.slice(1) || 'dashboard') === 'participants') renderParticipantsGrid(); }, 30000);

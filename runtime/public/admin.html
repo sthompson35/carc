@@ -299,6 +299,20 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75rem;ba
             </table>
           </div>
         </div>
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">🧾 Sync Audit Trail</div>
+            <div class="panel-actions">
+              <span class="text-xs text-muted" id="syncStatusSummary"></span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Time</th><th>Type</th><th>Initiator</th><th>Result</th><th>Submitted</th><th>Inserted</th><th>Updated</th><th>Unchanged</th><th>Unmatched</th><th>Duration</th></tr></thead>
+              <tbody id="syncEventsBody"><tr><td colspan="10"><div class="empty">Connect to load data.</div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <!-- TOKENS -->
@@ -585,9 +599,10 @@ function loadRoster(){
     const qs='?page='+rosterPage+'&limit=25'+(rosterReadinessFilter!==''?'&readiness='+rosterReadinessFilter:'')+(rosterKindFilter!==''?'&kind='+rosterKindFilter:'');
     Promise.all([
         api('/api/roster'+qs), api('/api/readiness'), api('/api/roll-calls?limit=8'),
-        api('/api/readiness/history?days=14'), api('/api/roll-calls/stats')
+        api('/api/readiness/history?days=14'), api('/api/roll-calls/stats'),
+        api('/api/sync-events?limit=20'), api('/api/sync-events/status')
     ]).then(function(res){
-        const rosterData=res[0], readinessData=res[1], rcData=res[2], historyData=res[3], rcStats=res[4];
+        const rosterData=res[0], readinessData=res[1], rcData=res[2], historyData=res[3], rcStats=res[4], syncEvents=res[5], syncStatus=res[6];
         allRoster=rosterData.rows||[];
         document.getElementById('rosterCount').textContent=rosterData.total+' total';
         renderRosterTable(rosterData);
@@ -595,7 +610,29 @@ function loadRoster(){
         renderRollCallTable(rcData.rows||[]);
         renderReadinessChart(historyData.rows||[]);
         renderRollCallChart(rcStats.byDay||[]);
+        renderSyncEvents(syncEvents.rows||[], syncStatus);
     }).catch(function(e){toast('err','Roster: '+e.message);});
+}
+function renderSyncEvents(rows, status){
+    const parts=[];
+    ['roster','roll_calls'].forEach(function(t){
+        const s=status&&status[t];
+        if(s)parts.push(t+': '+s.initiator+' · '+fmtDate(s.startedAt));
+    });
+    document.getElementById('syncStatusSummary').textContent=parts.join('  ·  ');
+    document.getElementById('syncEventsBody').innerHTML=rows.length?rows.map(r=>
+        '<tr>' +
+        '<td style="white-space:nowrap;font-size:.71rem;">'+esc(fmtDate(r.startedAt))+'</td>' +
+        '<td><span class="badge badge-neutral">'+esc(r.syncType)+'</span></td>' +
+        '<td>'+esc(r.initiator)+'</td>' +
+        '<td>'+(r.result==='success'?'<span class="badge badge-ok">success</span>':'<span class="badge badge-err" title="'+esc(r.errorMessage||'')+'">error</span>')+'</td>' +
+        '<td>'+esc(r.submittedCount)+'</td>' +
+        '<td>'+esc(r.insertedCount)+'</td>' +
+        '<td>'+esc(r.updatedCount)+'</td>' +
+        '<td>'+esc(r.unchangedCount)+'</td>' +
+        '<td>'+esc(r.unmatchedCount)+'</td>' +
+        '<td>'+esc(r.durationMs!=null?r.durationMs+'ms':'—')+'</td></tr>').join('')
+        :'<tr><td colspan="10"><div class="empty">No sync events yet.</div></td></tr>';
 }
 function renderReadinessChart(rows){
     const el=document.getElementById('readinessChart');
