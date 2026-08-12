@@ -788,6 +788,10 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                             </select>
                             <span class="badge" id="chatRouteBadge">AUTO</span>
                         </div>
+                        <div class="chat-input-row" style="margin-bottom:8px;">
+                            <input type="text" id="chatSearchInput" placeholder="🔍 Search chat history…" style="flex:1;">
+                            <span class="text-xs text-muted" id="chatSearchCount"></span>
+                        </div>
                         <div class="chat-window" id="chatWindow"></div>
                         <div class="chat-suggestions">
                             <button data-q="@VEX: what's your status?">@VEX status</button>
@@ -1367,7 +1371,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                 lastRun: minsAgo(35),
                 totalRuns: 4,
                 chatLog: [
-                    { role: 'agent', text: 'Council Roll Call Agent online. Ask me about participants, conversations, or attendance — or say "start roll call".', time: nowTime() }
+                    { role: 'agent', text: 'Council Roll Call Agent online. Ask me about participants, conversations, or attendance — or say "start roll call".', time: nowTime(), at: new Date().toISOString() }
                 ]
             },
             totalMessages: 1284,
@@ -3246,13 +3250,19 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
     }
 
     // ---- Chat ----
+    var chatSearchQuery = '';
     function renderChat() {
         var win = document.getElementById('chatWindow');
         if (!win) return;
-        win.innerHTML = DATA.agent.chatLog.map(function (m) {
+        var q = chatSearchQuery.trim().toLowerCase();
+        var messages = DATA.agent.chatLog;
+        var filtered = q ? messages.filter(function (m) { return String(m.text || '').toLowerCase().indexOf(q) !== -1; }) : messages;
+        win.innerHTML = filtered.map(function (m) {
             return '<div class="chat-bubble ' + m.role + '">' + esc(m.text) + '<span class="ct">' + esc(m.time) + '</span></div>';
-        }).join('');
-        win.scrollTop = win.scrollHeight;
+        }).join('') || (q ? '<div class="text-muted text-sm" style="padding:12px;">No messages match "' + esc(chatSearchQuery) + '".</div>' : '');
+        if (!q) win.scrollTop = win.scrollHeight;
+        var countEl = document.getElementById('chatSearchCount');
+        if (countEl) countEl.textContent = q ? (filtered.length + ' of ' + messages.length + ' match' + (filtered.length === 1 ? '' : 'es')) : '';
     }
     function showTypingIndicator() {
         var win = document.getElementById('chatWindow');
@@ -3269,7 +3279,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
         if (el) el.remove();
     }
     function clearChatHistory() {
-        DATA.agent.chatLog = [{ role: 'agent', text: 'Chat cleared. Address @CALLSIGN, ask about role/mission/tasks/status, or broadcast to ALL.', time: nowTime() }];
+        DATA.agent.chatLog = [{ role: 'agent', text: 'Chat cleared. Address @CALLSIGN, ask about role/mission/tasks/status, or broadcast to ALL.', time: nowTime(), at: new Date().toISOString() }];
         saveData(); renderChat();
         showToast('info', '🗑️ Chat history cleared');
     }
@@ -3291,6 +3301,26 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
         if (!m) return null;
         var cs = '@' + m[1].toUpperCase();
         return DATA.participants.find(function (p) { return String(p.callsign || '').toUpperCase() === cs; }) || null;
+    }
+    // Plural counterpart: resolves every @callsign mention in a message, not just the first,
+    // so "@VEX @MAPE status" addresses both instead of silently dropping the second mention.
+    // An explicit dropdown target still takes priority and stays single-target, matching the
+    // existing override behavior of findChatTarget().
+    function findChatTargets(query, explicitTarget) {
+        if (explicitTarget === 'ALL') return [];
+        if (explicitTarget && explicitTarget !== 'AUTO') {
+            var one = DATA.participants.find(function (p) { return p.serviceMemberId === explicitTarget; });
+            return one ? [one] : [];
+        }
+        var mentions = String(query || '').match(/@([A-Z0-9_]+)/gi) || [];
+        if (!mentions.length) return [];
+        var seen = {}, out = [];
+        mentions.forEach(function (raw) {
+            var cs = raw.toUpperCase();
+            var p = DATA.participants.find(function (x) { return String(x.callsign || '').toUpperCase() === cs; });
+            if (p && !seen[p.id]) { seen[p.id] = true; out.push(p); }
+        });
+        return out;
     }
     function chatMissionAnswer(p, query) {
         var mp = p.missionProfile || {};
@@ -3364,21 +3394,30 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
 
         return null;
     }
+    // startRollCall() silently no-ops (just a toast) when a roll call is already running, so
+    // every broadcast-triggering reply must check state first — claiming success unconditionally
+    // was misleading: rapid-fire broadcasts could report success 3 times while only 1 actually ran.
+    function attemptBroadcast(query, successMsg) {
+        if (DATA.agent.state === 'running') {
+            return 'A roll call is already in progress — please wait a moment and try again.';
+        }
+        startRollCall(query);
+        return successMsg;
+    }
     function agentRespond(query, explicitTarget) {
         var q = query.toLowerCase();
         var cmdReply = tryAgentCommand(query, explicitTarget);
         if (cmdReply != null) return cmdReply;
         var active = DATA.participants.filter(function (p) { return p.status === 'active'; });
-        var target = findChatTarget(query, explicitTarget);
-        if (target) return chatMissionAnswer(target, query);
+        var multiTargets = findChatTargets(query, explicitTarget);
+        if (multiTargets.length > 1) return multiTargets.map(function (p) { return chatMissionAnswer(p, query); }).join('\n\n');
+        if (multiTargets.length === 1) return chatMissionAnswer(multiTargets[0], query);
         if (explicitTarget === 'ALL' && !isGroupBroadcastMessage(query)) {
-            startRollCall(query);
-            return 'Broadcast routed to ALL active canonical identities. Responses were persisted to the roll-call transcript and are LOCAL_RULE_ENGINE · NOT_RUNTIME_VERIFIED.';
+            return attemptBroadcast(query, 'Broadcast routed to ALL active canonical identities. Responses were persisted to the roll-call transcript and are LOCAL_RULE_ENGINE · NOT_RUNTIME_VERIFIED.');
         }
-        if (/roll ?call/.test(q) && /(start|run|begin|do|now)/.test(q)) { startRollCall(query); return 'Roll call initiated. CARC will persist the operator message and one current canonical local response per active identity.'; }
+        if (/roll ?call/.test(q) && /(start|run|begin|do|now)/.test(q)) { return attemptBroadcast(query, 'Roll call initiated. CARC will persist the operator message and one current canonical local response per active identity.'); }
         if (isGroupBroadcastMessage(query)) {
-            startRollCall(query);
-            return 'Group broadcast accepted. CARC is persisting exactly one current canonical response per active identity. Local responses are NOT_RUNTIME_VERIFIED.';
+            return attemptBroadcast(query, 'Group broadcast accepted. CARC is persisting exactly one current canonical response per active identity. Local responses are NOT_RUNTIME_VERIFIED.');
         }
         if (/attendance/.test(q)) return 'Current attendance average (last ' + Math.min(10, DATA.rollCalls.length) + ' roll calls): ' + computeAttendance() + '%.';
         if (/active/.test(q) && /participant|member|identity/.test(q)) return active.length + ' of ' + DATA.participants.length + ' controlled identities are active in the local CARC registry.';
@@ -3387,16 +3426,16 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             var recent = DATA.conversations.slice(0, 3).map(function (c) { return c.title; }).join(', ');
             return 'There are ' + DATA.conversations.length + ' conversations. Most recent: ' + recent + '.';
         }
-        if (/help|what can you do/.test(q)) return 'Agent Chat routes by @CALLSIGN or target selector. Ask any member for status, role, purpose, mission, duties, tasks, outputs, or identity. Choose ALL or say "everyone" for a persisted roster broadcast — an unaddressed message broadcasts to ALL by default. Commands: "@CALLSIGN mark present/absent", "create conversation: <title>", "set alert threshold to N", "pause/resume auto mode", "export data", "export participants". Local responses are NOT_RUNTIME_VERIFIED.';
+        if (/help|what can you do/.test(q)) return 'Agent Chat routes by @CALLSIGN or target selector — address multiple members at once with multiple @mentions. Ask any member for status, role, purpose, mission, duties, tasks, outputs, or identity. Choose ALL or say "everyone" for a persisted roster broadcast — an unaddressed message broadcasts to ALL by default. Commands: "@CALLSIGN mark present/absent", "create conversation: <title>", "set alert threshold to N", "pause/resume auto mode", "export data", "export participants". Local responses are NOT_RUNTIME_VERIFIED.';
         // No @CALLSIGN, no recognized keyword, and no explicit target — default to a broadcast
         // rather than erroring, so a plain unaddressed message still does something useful.
-        startRollCall(query);
-        return 'No @CALLSIGN or ALL specified — broadcasting to all active canonical identities by default. Responses were persisted to the roll-call transcript and are LOCAL_RULE_ENGINE · NOT_RUNTIME_VERIFIED. Address @CALLSIGN to target one member, or type "help" for other commands.';
+        return attemptBroadcast(query, 'No @CALLSIGN or ALL specified — broadcasting to all active canonical identities by default. Responses were persisted to the roll-call transcript and are LOCAL_RULE_ENGINE · NOT_RUNTIME_VERIFIED. Address @CALLSIGN to target one member, or type "help" for other commands.');
     }
     function sendChat(text) {
         text = (text || document.getElementById('chatInput').value).trim();
         if (!text) return;
-        DATA.agent.chatLog.push({ role: 'user', text: text, time: nowTime() });
+        chatHistoryPush(text);
+        DATA.agent.chatLog.push({ role: 'user', text: text, time: nowTime(), at: new Date().toISOString() });
         renderChat();
         document.getElementById('chatInput').value = '';
         showTypingIndicator();
@@ -3404,10 +3443,18 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             var targetEl = document.getElementById('chatTarget');
             var reply = agentRespond(text, targetEl ? targetEl.value : 'AUTO');
             hideTypingIndicator();
-            DATA.agent.chatLog.push({ role: 'agent', text: reply, time: nowTime() });
+            DATA.agent.chatLog.push({ role: 'agent', text: reply, time: nowTime(), at: new Date().toISOString() });
             if (DATA.agent.chatLog.length > 100) DATA.agent.chatLog = DATA.agent.chatLog.slice(-100);
             saveData(); renderChat();
         }, 600);
+    }
+    // ---- Command history: Up/Down arrow recall in the chat input ----
+    var chatCmdHistory = [];
+    var chatCmdHistoryPos = -1;
+    function chatHistoryPush(text) {
+        if (chatCmdHistory[chatCmdHistory.length - 1] !== text) chatCmdHistory.push(text);
+        if (chatCmdHistory.length > 50) chatCmdHistory = chatCmdHistory.slice(-50);
+        chatCmdHistoryPos = chatCmdHistory.length;
     }
 
     function openRenameAgentModal() {
@@ -3500,8 +3547,22 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                 if (badge) badge.textContent = chatTarget.value === 'AUTO' ? 'AUTO' : (chatTarget.value === 'ALL' ? 'ALL' : ((DATA.participants.find(function(p){return p.serviceMemberId===chatTarget.value;})||{}).callsign || 'TARGET'));
             });
         }
+        document.getElementById('chatSearchInput').addEventListener('input', debounce(function (e) { chatSearchQuery = e.target.value; renderChat(); }, 150));
         document.getElementById('btnChatSend').addEventListener('click', function () { sendChat(); });
-        document.getElementById('chatInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') sendChat(); });
+        document.getElementById('chatInput').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { sendChat(); return; }
+            if (e.key === 'ArrowUp') {
+                if (!chatCmdHistory.length) return;
+                e.preventDefault();
+                chatCmdHistoryPos = Math.max(0, chatCmdHistoryPos - 1);
+                e.target.value = chatCmdHistory[chatCmdHistoryPos] || '';
+            } else if (e.key === 'ArrowDown') {
+                if (!chatCmdHistory.length) return;
+                e.preventDefault();
+                chatCmdHistoryPos = Math.min(chatCmdHistory.length, chatCmdHistoryPos + 1);
+                e.target.value = chatCmdHistory[chatCmdHistoryPos] || '';
+            }
+        });
         $all('.chat-suggestions button').forEach(function (btn) { btn.addEventListener('click', function () { sendChat(btn.getAttribute('data-q')); }); });
         document.getElementById('btnChatClear').addEventListener('click', function () {
             if (confirm('Clear the entire chat history? This cannot be undone.')) clearChatHistory();
