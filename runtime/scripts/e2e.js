@@ -193,6 +193,23 @@ async function run() {
     const historyHit = (data.rows || []).find(r => r.readiness === 'MISSION_READY');
     assert(!!historyHit && historyHit.n >= 1, 'GET /api/readiness/history recorded the sync event');
 
+    // idempotency: resubmitting the identical payload must not mutate state or grow history
+    const historyCountBefore = db.prepare('SELECT COUNT(*) AS n FROM readiness_history WHERE service_member_id = ?').get(rosterId).n;
+    t = await authReq(port, '/api/roster/sync', 'POST', tmpToken, {
+        records: [{ serviceMemberId: rosterId, status: 'active', readiness: 'MISSION_READY', missionProfile: { mission: 'e2e drill' } }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.updated === 0 && data.unchanged === 1, 'repeat roster sync → 0 updated, 1 unchanged (idempotent)');
+    const historyCountAfter = db.prepare('SELECT COUNT(*) AS n FROM readiness_history WHERE service_member_id = ?').get(rosterId).n;
+    assert(historyCountAfter === historyCountBefore, 'repeat roster sync does not grow readiness_history (' + historyCountAfter + ' === ' + historyCountBefore + ')');
+
+    // unmatched: a serviceMemberId not in roster should be reported, not silently dropped
+    t = await authReq(port, '/api/roster/sync', 'POST', tmpToken, {
+        records: [{ serviceMemberId: 'E2E-DOES-NOT-EXIST', status: 'active', readiness: 'MISSION_READY' }]
+    });
+    data = t.json();
+    assert(data.unmatched === 1 && data.synced === 0, 'sync of unknown serviceMemberId reports unmatched:1');
+
     db.prepare('DELETE FROM roster WHERE service_member_id = ?').run(rosterId);
     db.prepare('DELETE FROM readiness_history WHERE service_member_id = ?').run(rosterId);
     console.log('     roster test record cleaned up');
@@ -215,11 +232,47 @@ async function run() {
     data = t.json();
     assert(data.total >= 1 && typeof data.avgRate === 'number', 'GET /api/roll-calls/stats returns aggregate');
 
-    db.prepare('DELETE FROM roll_calls WHERE id = ?').run(rcId);
-    console.log('     roll call test record cleaned up');
+    // idempotency: resubmitting the identical roll call must not mutate the row
+    t = await authReq(port, '/api/roll-calls/sync', 'POST', tmpToken, {
+        records: [{ id: rcId, date: rcRow.date, conv: 'E2E Roll Call', present: 9, total: 12, rate: 75, status: 'completed', message: 'e2e drill', responseMode: 'LOCAL_RULE_ENGINE' }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.inserted === 0 && data.updated === 0 && data.unchanged === 1, 'repeat roll-call sync → 0 inserted, 0 updated, 1 unchanged (idempotent)');
+    const rcCountAfter = db.prepare('SELECT COUNT(*) AS n FROM roll_calls WHERE id = ?').get(rcId).n;
+    assert(rcCountAfter === 1, 'repeat roll-call sync does not duplicate the row');
 
-    // ── 12. revoke temp token; confirm 403 ───────────────────────
-    console.log('\n[12] Revoke temp token → confirm 403');
+    // ── 12. sync audit trail ───────────────────────────────────────
+    console.log('\n[12] Sync audit trail');
+    t = await authReq(port, '/api/sync-events?limit=50', 'GET', tmpToken);
+    data = t.json();
+    const rosterEvents = (data.rows || []).filter(r => r.syncType === 'roster');
+    const rcEvents = (data.rows || []).filter(r => r.syncType === 'roll_calls');
+    assert(rosterEvents.length >= 3, 'roster sync events recorded (initial + repeat + unmatched)');
+    assert(rcEvents.length >= 2, 'roll-call sync events recorded (initial + repeat)');
+    assert(rosterEvents.every(r => r.result === 'success' || r.errorMessage), 'every event has a result and, if error, a message');
+    const lastRosterEvent = rosterEvents[0];
+    assert(lastRosterEvent.initiator === 'manual', 'default initiator is "manual" when not specified');
+
+    t = await authReq(port, '/api/sync-events/status', 'GET', tmpToken);
+    data = t.json();
+    assert(!!data.roster && !!data.roll_calls, 'GET /api/sync-events/status returns last event per sync type');
+    assert(typeof data.roster.durationMs === 'number', 'audit event records duration');
+
+    // auto initiator is honored end-to-end
+    t = await authReq(port, '/api/roll-calls/sync', 'POST', tmpToken, {
+        initiator: 'auto',
+        records: [{ id: rcId, date: rcRow.date, conv: 'E2E Roll Call', present: 9, total: 12, rate: 75, status: 'completed', message: 'e2e drill', responseMode: 'LOCAL_RULE_ENGINE' }]
+    });
+    assert(t.status === 200, 'auto-initiated sync accepted');
+    t = await authReq(port, '/api/sync-events/status', 'GET', tmpToken);
+    data = t.json();
+    assert(data.roll_calls.initiator === 'auto', 'sync-events/status reflects the auto initiator');
+
+    db.prepare('DELETE FROM roll_calls WHERE id = ?').run(rcId);
+    console.log('     roll call test record cleaned up (sync_events audit rows intentionally left — append-only trail)');
+
+    // ── 13. revoke temp token; confirm 403 ───────────────────────
+    console.log('\n[13] Revoke temp token → confirm 403');
     db.prepare('UPDATE tokens SET active = 0 WHERE id = ?').run(tmpId);
     t = await authReq(port, '/api/stats', 'GET', tmpToken);
     assert(t.status === 403, 'revoked token → 403');

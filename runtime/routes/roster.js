@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { requireBearer } = require('../middleware/auth');
 const { getDb } = require('../db/database');
+const { recordSyncEvent } = require('../db/syncAudit');
 
 function rowToJson(row) {
     let missionProfile = null;
@@ -52,20 +53,34 @@ router.get('/api/roster/:serviceMemberId', requireBearer, function (req, res) {
     res.json(rowToJson(row));
 });
 
-// POST /api/roster/sync  { records: [{ serviceMemberId, status, readiness, missionProfile }, ...] }
+// POST /api/roster/sync  { records: [{ serviceMemberId, status, readiness, missionProfile }, ...], initiator? }
+// Idempotent: syncing identical values again reports them as "unchanged" and
+// does not write a new readiness_history row — repeated syncs don't inflate history.
 router.post('/api/roster/sync', requireBearer, function (req, res) {
+    const db = getDb();
+    const startedAt = new Date().toISOString();
+    const t0 = Date.now();
+    const initiator = req.body && req.body.initiator === 'auto' ? 'auto' : 'manual';
     const records = req.body && req.body.records;
-    if (!Array.isArray(records) || !records.length) {
-        return res.status(400).json({ error: 'BAD_REQUEST', reason: 'records[] is required' });
+
+    function fail(status, reason) {
+        recordSyncEvent(db, {
+            syncType: 'roster', initiator, startedAt, durationMs: Date.now() - t0,
+            submittedCount: Array.isArray(records) ? records.length : 0,
+            result: 'error', errorMessage: reason
+        });
+        return res.status(status).json({ error: 'BAD_REQUEST', reason });
     }
+
+    if (!Array.isArray(records) || !records.length) return fail(400, 'records[] is required');
     for (const r of records) {
         if (!r || typeof r.serviceMemberId !== 'string' || !r.serviceMemberId) {
-            return res.status(400).json({ error: 'BAD_REQUEST', reason: 'each record requires serviceMemberId' });
+            return fail(400, 'each record requires serviceMemberId');
         }
     }
 
-    const db = getDb();
     const now = new Date().toISOString();
+    const getExisting = db.prepare('SELECT status, readiness, mission_profile_json FROM roster WHERE service_member_id = ?');
     const update = db.prepare(`
         UPDATE roster
         SET status = ?, readiness = ?, mission_profile_json = ?, updated_at = ?
@@ -75,28 +90,40 @@ router.post('/api/roster/sync', requireBearer, function (req, res) {
         INSERT INTO readiness_history (service_member_id, readiness, status, recorded_at)
         VALUES (?, ?, ?, ?)
     `);
+
+    let updatedCount = 0, unchangedCount = 0, unmatchedCount = 0, errorMessage = null;
     const syncAll = db.transaction((rows) => {
-        let matched = 0;
         for (const r of rows) {
-            const status    = r.status != null ? String(r.status) : null;
-            const readiness = r.readiness != null ? String(r.readiness) : null;
-            const info = update.run(
-                status,
-                readiness,
-                r.missionProfile ? JSON.stringify(r.missionProfile) : null,
-                now,
-                r.serviceMemberId
-            );
-            if (info.changes) {
-                matched++;
-                recordHistory.run(r.serviceMemberId, readiness, status, now);
-            }
+            const existing = getExisting.get(r.serviceMemberId);
+            if (!existing) { unmatchedCount++; continue; }
+            const status           = r.status != null ? String(r.status) : null;
+            const readiness        = r.readiness != null ? String(r.readiness) : null;
+            const missionProfileJs = r.missionProfile ? JSON.stringify(r.missionProfile) : null;
+            const changed = existing.status !== status || existing.readiness !== readiness || existing.mission_profile_json !== missionProfileJs;
+            update.run(status, readiness, missionProfileJs, now, r.serviceMemberId);
+            if (changed) { updatedCount++; recordHistory.run(r.serviceMemberId, readiness, status, now); }
+            else unchangedCount++;
         }
-        return matched;
     });
 
-    const matched = syncAll(records);
-    res.json({ synced: matched, submitted: records.length, unmatched: records.length - matched, syncedAt: now });
+    let result = 'success';
+    try {
+        syncAll(records);
+    } catch (e) {
+        result = 'error'; errorMessage = e.message;
+    }
+
+    recordSyncEvent(db, {
+        syncType: 'roster', initiator, startedAt, durationMs: Date.now() - t0,
+        submittedCount: records.length, updatedCount, unchangedCount, unmatchedCount,
+        result, errorMessage
+    });
+
+    if (result === 'error') return res.status(500).json({ error: 'SYNC_FAILED', reason: errorMessage });
+    res.json({
+        synced: updatedCount + unchangedCount, submitted: records.length, unmatched: unmatchedCount,
+        updated: updatedCount, unchanged: unchangedCount, syncedAt: now
+    });
 });
 
 // GET /api/readiness — aggregate counts

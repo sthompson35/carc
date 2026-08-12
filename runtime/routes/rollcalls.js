@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { requireBearer } = require('../middleware/auth');
 const { getDb } = require('../db/database');
+const { recordSyncEvent } = require('../db/syncAudit');
 
 function rowToJson(row) {
     return {
@@ -31,20 +32,31 @@ router.get('/api/roll-calls', requireBearer, function (req, res) {
     res.json({ total, page, limit, pages: Math.ceil(total / limit), rows: rows.map(rowToJson) });
 });
 
-// POST /api/roll-calls/sync  { records: [{ id, date, conv, present, total, rate, status, message, responseMode }, ...] }
+// POST /api/roll-calls/sync  { records: [{ id, date, conv, present, total, rate, status, message, responseMode }, ...], initiator? }
+// Idempotent: resyncing an identical record is reported as "unchanged" — no data mutation, no phantom history.
 router.post('/api/roll-calls/sync', requireBearer, function (req, res) {
+    const db = getDb();
+    const startedAt = new Date().toISOString();
+    const t0 = Date.now();
+    const initiator = req.body && req.body.initiator === 'auto' ? 'auto' : 'manual';
     const records = req.body && req.body.records;
-    if (!Array.isArray(records) || !records.length) {
-        return res.status(400).json({ error: 'BAD_REQUEST', reason: 'records[] is required' });
-    }
-    for (const r of records) {
-        if (!r || typeof r.id !== 'string' || !r.id) {
-            return res.status(400).json({ error: 'BAD_REQUEST', reason: 'each record requires id' });
-        }
+
+    function fail(status, reason) {
+        recordSyncEvent(db, {
+            syncType: 'roll_calls', initiator, startedAt, durationMs: Date.now() - t0,
+            submittedCount: Array.isArray(records) ? records.length : 0,
+            result: 'error', errorMessage: reason
+        });
+        return res.status(status).json({ error: 'BAD_REQUEST', reason });
     }
 
-    const db = getDb();
+    if (!Array.isArray(records) || !records.length) return fail(400, 'records[] is required');
+    for (const r of records) {
+        if (!r || typeof r.id !== 'string' || !r.id) return fail(400, 'each record requires id');
+    }
+
     const now = new Date().toISOString();
+    const getExisting = db.prepare('SELECT date, conv, present, total, rate, status, message, response_mode FROM roll_calls WHERE id = ?');
     const upsert = db.prepare(`
         INSERT INTO roll_calls (id, date, conv, present, total, rate, status, message, response_mode, synced_at)
         VALUES (@id, @date, @conv, @present, @total, @rate, @status, @message, @responseMode, @syncedAt)
@@ -53,10 +65,12 @@ router.post('/api/roll-calls/sync', requireBearer, function (req, res) {
             total = excluded.total, rate = excluded.rate, status = excluded.status,
             message = excluded.message, response_mode = excluded.response_mode, synced_at = excluded.synced_at
     `);
+
+    let insertedCount = 0, updatedCount = 0, unchangedCount = 0, errorMessage = null;
     const syncAll = db.transaction((rows) => {
-        let synced = 0;
         for (const r of rows) {
-            upsert.run({
+            const existing = getExisting.get(r.id);
+            const rec = {
                 id: r.id,
                 date: r.date || null,
                 conv: r.conv || null,
@@ -67,14 +81,34 @@ router.post('/api/roll-calls/sync', requireBearer, function (req, res) {
                 message: r.message || null,
                 responseMode: r.responseMode || null,
                 syncedAt: now
-            });
-            synced++;
+            };
+            upsert.run(rec);
+            if (!existing) { insertedCount++; continue; }
+            const changed = existing.date !== rec.date || existing.conv !== rec.conv ||
+                existing.present !== rec.present || existing.total !== rec.total || existing.rate !== rec.rate ||
+                existing.status !== rec.status || existing.message !== rec.message || existing.response_mode !== rec.responseMode;
+            if (changed) updatedCount++; else unchangedCount++;
         }
-        return synced;
     });
 
-    const synced = syncAll(records);
-    res.json({ synced, submitted: records.length, syncedAt: now });
+    let result = 'success';
+    try {
+        syncAll(records);
+    } catch (e) {
+        result = 'error'; errorMessage = e.message;
+    }
+
+    recordSyncEvent(db, {
+        syncType: 'roll_calls', initiator, startedAt, durationMs: Date.now() - t0,
+        submittedCount: records.length, insertedCount, updatedCount, unchangedCount,
+        result, errorMessage
+    });
+
+    if (result === 'error') return res.status(500).json({ error: 'SYNC_FAILED', reason: errorMessage });
+    res.json({
+        synced: insertedCount + updatedCount + unchangedCount, submitted: records.length,
+        inserted: insertedCount, updated: updatedCount, unchanged: unchangedCount, syncedAt: now
+    });
 });
 
 // GET /api/roll-calls/stats — aggregate attendance stats

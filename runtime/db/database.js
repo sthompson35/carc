@@ -94,6 +94,24 @@ function initDb() {
         );
 
         CREATE INDEX IF NOT EXISTS idx_rc_date ON roll_calls(date);
+
+        CREATE TABLE IF NOT EXISTS sync_events (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            sync_type        TEXT    NOT NULL,
+            initiator        TEXT    NOT NULL DEFAULT 'manual',
+            started_at       TEXT    NOT NULL,
+            duration_ms      INTEGER,
+            submitted_count  INTEGER,
+            inserted_count   INTEGER,
+            updated_count    INTEGER,
+            unchanged_count  INTEGER,
+            unmatched_count  INTEGER,
+            result           TEXT    NOT NULL,
+            error_message    TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sync_events_type    ON sync_events(sync_type);
+        CREATE INDEX IF NOT EXISTS idx_sync_events_started ON sync_events(started_at);
     `);
     return d;
 }
