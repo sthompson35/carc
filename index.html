@@ -379,7 +379,7 @@ kbd { background:var(--gray-200); border-radius:4px; padding:1px 6px; font-size:
 .gate-item .gate-name { font-size:.82rem; font-weight:700; color:var(--gray-900); }
 .gate-item .gate-desc { font-size:.7rem; color:var(--gray-500); margin-top:5px; line-height:1.4; }
 .gate-item .gate-meta { font-size:.66rem; color:var(--gray-500); margin-top:8px; word-break:break-word; }
-.audit-ok { color:var(--success); font-weight:700; } .audit-bad { color:var(--danger); font-weight:700; }
+.audit-ok { color:var(--success); font-weight:700; } .audit-bad { color:var(--danger); font-weight:700; } .audit-warn { color:var(--warning); font-weight:700; }
 .progress-track { height:10px; background:var(--gray-100); border-radius:8px; overflow:hidden; }
 .progress-fill { height:100%; background:linear-gradient(90deg,var(--primary),var(--secondary)); border-radius:8px; }
 @media (max-width:700px) { .gate-strip { grid-template-columns:1fr; } }
@@ -3740,21 +3740,40 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             var statusTxt = ep.lastTestResult === 'OK' ? 'CONNECTED' : ep.lastTestResult === 'ERROR' ? 'ERROR' : 'NOT_TESTED';
             var rs = ep.lastRosterSync;
             var rcs = ep.lastRollCallSync;
+            var rsErr = ep.lastRosterSyncError;
+            var rcsErr = ep.lastRollCallSyncError;
             var as = autoSyncSettings();
-            var staleMs = AUTO_SYNC_BASE_INTERVAL_MS * 2;
-            var lastSyncTs = [rs, rcs].filter(Boolean).map(function(s){ return new Date(s.syncedAt).getTime(); });
-            var oldestSync = lastSyncTs.length ? Math.min.apply(null, lastSyncTs) : null;
-            var isStale = as.enabled && oldestSync != null && (Date.now() - oldestSync) > staleMs;
+            // Stale threshold applies regardless of auto-sync mode: 2x the auto interval while
+            // auto-sync is on (a missed cycle should show up quickly), a generous 24h grace
+            // period while manual-only (there's no expected cadence to hold it to).
+            var staleMs = as.enabled ? (AUTO_SYNC_BASE_INTERVAL_MS * 2) : (24 * 60 * 60 * 1000);
+            function trustState(lastSync, lastError) {
+                var syncTs = lastSync ? new Date(lastSync.syncedAt).getTime() : null;
+                var errTs = lastError ? new Date(lastError.at).getTime() : null;
+                if (syncTs == null && errTs == null) return { state: 'UNSYNCED', lastResult: '—', lastAt: null };
+                var errorIsNewest = errTs != null && (syncTs == null || errTs > syncTs);
+                if (errorIsNewest) return { state: 'ERROR', lastResult: 'ERROR', lastAt: lastError.at };
+                var age = Date.now() - syncTs;
+                return { state: age > staleMs ? 'STALE' : 'CURRENT', lastResult: 'SUCCESS', lastAt: lastSync.syncedAt };
+            }
+            var rosterTrust = trustState(rs, rsErr);
+            var rcTrust = trustState(rcs, rcsErr);
+            var stateCls = { CURRENT: 'audit-ok', SUCCESS: 'audit-ok', STALE: 'audit-warn', ERROR: 'audit-bad', UNSYNCED: '' };
+            var combinedLastResult = (rosterTrust.lastResult === 'ERROR' || rcTrust.lastResult === 'ERROR') ? 'ERROR'
+                : (rosterTrust.lastResult === 'SUCCESS' || rcTrust.lastResult === 'SUCCESS') ? 'SUCCESS' : '—';
             epEl.innerHTML =
                 '<div class="kv-row"><span>Endpoint URL</span><b class="text-xs truncate" style="max-width:220px;display:block;">'+esc(ep.url||'—')+'</b></div>'+
                 '<div class="kv-row"><span>Bearer Token</span><b>'+(ep.tokenSet?'•••• configured':'NOT SET')+'</b></div>'+
                 '<div class="kv-row"><span>Status</span><span class="'+statusCls+'">'+statusTxt+(ep.lastTestAt?' · '+esc(fmtDate(ep.lastTestAt)):'')+'</span></div>'+
                 (rs ? '<div class="kv-row"><span>Roster Sync</span><span class="text-xs">'+esc(rs.synced)+'/'+esc(rs.submitted)+(rs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(rs.syncedAt))+'</span></div>' : '')+
                 (rcs ? '<div class="kv-row"><span>Roll Call Sync</span><span class="text-xs">'+esc(rcs.synced)+'/'+esc(rcs.submitted)+(rcs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(rcs.syncedAt))+'</span></div>' : '')+
+                '<div class="kv-row"><span>Roster state</span><span class="'+(stateCls[rosterTrust.state]||'')+'">'+rosterTrust.state+'</span></div>'+
+                '<div class="kv-row"><span>Roll-call state</span><span class="'+(stateCls[rcTrust.state]||'')+'">'+rcTrust.state+'</span></div>'+
+                '<div class="kv-row"><span>Last result</span><span class="'+(stateCls[combinedLastResult]||'')+'">'+combinedLastResult+'</span></div>'+
+                '<div class="kv-row"><span>Next sync</span><span class="text-xs">'+(as.enabled && as.nextAttemptAt ? esc(fmtDate(as.nextAttemptAt)) : 'MANUAL')+'</span></div>'+
                 '<div class="kv-row"><span>Auto-sync</span><label class="text-xs" style="display:flex;align-items:center;gap:5px;cursor:pointer;">'+
                     '<input type="checkbox" id="chkAutoSync"'+(as.enabled?' checked':'')+(configured?'':' disabled')+'> '+
-                    (as.enabled ? (isStale ? '<span class="audit-bad">ON · STALE</span>' : '<span class="audit-ok">ON</span>') : 'OFF')+
-                    (as.enabled && as.nextAttemptAt ? ' · next '+esc(fmtDate(as.nextAttemptAt)) : '')+
+                    (as.enabled ? '<span class="audit-ok">ON</span>' : 'OFF')+
                 '</label></div>'+
                 '<div class="flex gap-1 mt-1">'+
                     '<button class="btn btn-outline btn-sm" id="btnConfigEndpoint">⚙️ Configure</button>'+
@@ -3940,6 +3959,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             .catch(function(err) {
                 clearTimeout(tid);
                 var msg = (err && err.name === 'AbortError') ? 'timeout after 15s' : (err.message || 'network error');
+                ep.lastRollCallSyncError = { at: new Date().toISOString(), message: msg, initiator: initiator };
                 addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Roll call sync failed: ' + msg);
                 saveData(); renderGovernancePage();
                 if (!silent) showToast('error', '❌ Roll call sync failed: ' + msg);
@@ -3979,6 +3999,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             .catch(function(err) {
                 clearTimeout(tid);
                 var msg = (err && err.name === 'AbortError') ? 'timeout after 15s' : (err.message || 'network error');
+                ep.lastRosterSyncError = { at: new Date().toISOString(), message: msg, initiator: initiator };
                 addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Roster sync failed: ' + msg);
                 saveData(); renderGovernancePage();
                 if (!silent) showToast('error', '❌ Roster sync failed: ' + msg);

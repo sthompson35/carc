@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { requireBearer } = require('../middleware/auth');
 const { getDb } = require('../db/database');
-const { recordSyncEvent } = require('../db/syncAudit');
+const { recordSyncEvent, newExecutionId } = require('../db/syncAudit');
 
 function rowToJson(row) {
     return {
@@ -40,14 +40,15 @@ router.post('/api/roll-calls/sync', requireBearer, function (req, res) {
     const t0 = Date.now();
     const initiator = req.body && req.body.initiator === 'auto' ? 'auto' : 'manual';
     const records = req.body && req.body.records;
+    const executionId = newExecutionId('roll_calls');
 
     function fail(status, reason) {
         recordSyncEvent(db, {
-            syncType: 'roll_calls', initiator, startedAt, durationMs: Date.now() - t0,
+            syncType: 'roll_calls', initiator, executionId, startedAt, durationMs: Date.now() - t0,
             submittedCount: Array.isArray(records) ? records.length : 0,
             result: 'error', errorMessage: reason
         });
-        return res.status(status).json({ error: 'BAD_REQUEST', reason });
+        return res.status(status).json({ error: 'BAD_REQUEST', reason, executionId });
     }
 
     if (!Array.isArray(records) || !records.length) return fail(400, 'records[] is required');
@@ -99,15 +100,15 @@ router.post('/api/roll-calls/sync', requireBearer, function (req, res) {
     }
 
     recordSyncEvent(db, {
-        syncType: 'roll_calls', initiator, startedAt, durationMs: Date.now() - t0,
+        syncType: 'roll_calls', initiator, executionId, startedAt, durationMs: Date.now() - t0,
         submittedCount: records.length, insertedCount, updatedCount, unchangedCount,
         result, errorMessage
     });
 
-    if (result === 'error') return res.status(500).json({ error: 'SYNC_FAILED', reason: errorMessage });
+    if (result === 'error') return res.status(500).json({ error: 'SYNC_FAILED', reason: errorMessage, executionId });
     res.json({
         synced: insertedCount + updatedCount + unchangedCount, submitted: records.length,
-        inserted: insertedCount, updated: updatedCount, unchanged: unchangedCount, syncedAt: now
+        inserted: insertedCount, updated: updatedCount, unchanged: unchangedCount, syncedAt: now, executionId
     });
 });
 

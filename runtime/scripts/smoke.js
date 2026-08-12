@@ -102,6 +102,10 @@ async function main() {
     console.assert(t.status === 401, '/api/sync-events/status should require auth');
     console.log('GET /api/sync-events/status', t.status, 'auth guard ok');
 
+    t = await req({ ...base, path: '/api/sync-status', method: 'GET' });
+    console.assert(t.status === 401, '/api/sync-status should require auth');
+    console.log('GET /api/sync-status', t.status, 'auth guard ok');
+
     console.log('\nAll smoke tests passed.');
     process.exit(0);
 }

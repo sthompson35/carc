@@ -177,6 +177,8 @@ async function run() {
     });
     data = t.json();
     assert(t.status === 200 && data.synced === 1, 'POST /api/roster/sync → 1 record matched');
+    assert(typeof data.executionId === 'string' && data.executionId.startsWith('SYNC-ROSTER-'), 'sync response carries an executionId');
+    const rosterExecId = data.executionId;
 
     t = await authReq(port, '/api/roster/' + rosterId, 'GET', tmpToken);
     data = t.json();
@@ -240,6 +242,7 @@ async function run() {
     assert(t.status === 200 && data.inserted === 0 && data.updated === 0 && data.unchanged === 1, 'repeat roll-call sync → 0 inserted, 0 updated, 1 unchanged (idempotent)');
     const rcCountAfter = db.prepare('SELECT COUNT(*) AS n FROM roll_calls WHERE id = ?').get(rcId).n;
     assert(rcCountAfter === 1, 'repeat roll-call sync does not duplicate the row');
+    assert(typeof data.executionId === 'string' && data.executionId !== rosterExecId, 'roll-call sync gets its own distinct executionId');
 
     // ── 12. sync audit trail ───────────────────────────────────────
     console.log('\n[12] Sync audit trail');
@@ -268,11 +271,36 @@ async function run() {
     data = t.json();
     assert(data.roll_calls.initiator === 'auto', 'sync-events/status reflects the auto initiator');
 
+    // executionId round-trips into the audit row itself, not just the response —
+    // look it up by id rather than assuming recency, since later calls in this same
+    // section (idempotent resync, unmatched-record test) also write roster events.
+    t = await authReq(port, '/api/sync-events?type=roster&limit=50', 'GET', tmpToken);
+    data = t.json();
+    const matchingAuditRow = (data.rows || []).find(r => r.executionId === rosterExecId);
+    assert(!!matchingAuditRow, 'the original roster sync\'s executionId is findable in the audit trail');
+
     db.prepare('DELETE FROM roll_calls WHERE id = ?').run(rcId);
     console.log('     roll call test record cleaned up (sync_events audit rows intentionally left — append-only trail)');
 
-    // ── 13. revoke temp token; confirm 403 ───────────────────────
-    console.log('\n[13] Revoke temp token → confirm 403');
+    // ── 13. sync-status (server-authoritative CURRENT/STALE/UNSYNCED) ─
+    console.log('\n[13] Sync status');
+    t = await authReq(port, '/api/sync-status', 'GET', tmpToken);
+    data = t.json();
+    assert(data.roster && data.roster.state === 'CURRENT', 'fresh roster sync reports state=CURRENT (' + (data.roster && data.roster.state) + ')');
+    assert(data.roll_calls && data.roll_calls.state === 'CURRENT', 'fresh roll-call sync reports state=CURRENT (' + (data.roll_calls && data.roll_calls.state) + ')');
+    assert(typeof data.staleThresholdMs === 'number', 'staleThresholdMs is reported (server policy, not client-derived)');
+
+    // backdate the latest roster sync_events row past the threshold and confirm the server
+    // (not any browser's local timer) is the one deciding staleness
+    const oldTs = new Date(Date.now() - (data.staleThresholdMs + 60000)).toISOString();
+    db.prepare('UPDATE sync_events SET started_at = ? WHERE id = (SELECT MAX(id) FROM sync_events WHERE sync_type = ?)').run(oldTs, 'roster');
+    t = await authReq(port, '/api/sync-status', 'GET', tmpToken);
+    data = t.json();
+    assert(data.roster.state === 'STALE', 'backdating the latest roster sync past the threshold flips state to STALE (' + data.roster.state + ')');
+    assert(data.roll_calls.state === 'CURRENT', 'roll_calls staleness is judged independently of roster (' + data.roll_calls.state + ')');
+
+    // ── 14. revoke temp token; confirm 403 ───────────────────────
+    console.log('\n[14] Revoke temp token → confirm 403');
     db.prepare('UPDATE tokens SET active = 0 WHERE id = ?').run(tmpId);
     t = await authReq(port, '/api/stats', 'GET', tmpToken);
     assert(t.status === 403, 'revoked token → 403');

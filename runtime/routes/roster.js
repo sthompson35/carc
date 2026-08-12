@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { requireBearer } = require('../middleware/auth');
 const { getDb } = require('../db/database');
-const { recordSyncEvent } = require('../db/syncAudit');
+const { recordSyncEvent, newExecutionId } = require('../db/syncAudit');
 
 function rowToJson(row) {
     let missionProfile = null;
@@ -62,14 +62,15 @@ router.post('/api/roster/sync', requireBearer, function (req, res) {
     const t0 = Date.now();
     const initiator = req.body && req.body.initiator === 'auto' ? 'auto' : 'manual';
     const records = req.body && req.body.records;
+    const executionId = newExecutionId('roster');
 
     function fail(status, reason) {
         recordSyncEvent(db, {
-            syncType: 'roster', initiator, startedAt, durationMs: Date.now() - t0,
+            syncType: 'roster', initiator, executionId, startedAt, durationMs: Date.now() - t0,
             submittedCount: Array.isArray(records) ? records.length : 0,
             result: 'error', errorMessage: reason
         });
-        return res.status(status).json({ error: 'BAD_REQUEST', reason });
+        return res.status(status).json({ error: 'BAD_REQUEST', reason, executionId });
     }
 
     if (!Array.isArray(records) || !records.length) return fail(400, 'records[] is required');
@@ -114,15 +115,15 @@ router.post('/api/roster/sync', requireBearer, function (req, res) {
     }
 
     recordSyncEvent(db, {
-        syncType: 'roster', initiator, startedAt, durationMs: Date.now() - t0,
+        syncType: 'roster', initiator, executionId, startedAt, durationMs: Date.now() - t0,
         submittedCount: records.length, updatedCount, unchangedCount, unmatchedCount,
         result, errorMessage
     });
 
-    if (result === 'error') return res.status(500).json({ error: 'SYNC_FAILED', reason: errorMessage });
+    if (result === 'error') return res.status(500).json({ error: 'SYNC_FAILED', reason: errorMessage, executionId });
     res.json({
         synced: updatedCount + unchangedCount, submitted: records.length, unmatched: unmatchedCount,
-        updated: updatedCount, unchanged: unchangedCount, syncedAt: now
+        updated: updatedCount, unchanged: unchangedCount, syncedAt: now, executionId
     });
 });
 

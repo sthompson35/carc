@@ -99,6 +99,7 @@ function initDb() {
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
             sync_type        TEXT    NOT NULL,
             initiator        TEXT    NOT NULL DEFAULT 'manual',
+            execution_id     TEXT,
             started_at       TEXT    NOT NULL,
             duration_ms      INTEGER,
             submitted_count  INTEGER,
@@ -113,6 +114,15 @@ function initDb() {
         CREATE INDEX IF NOT EXISTS idx_sync_events_type    ON sync_events(sync_type);
         CREATE INDEX IF NOT EXISTS idx_sync_events_started ON sync_events(started_at);
     `);
+
+    // Migration: sync_events predates execution_id (added for cross-referencing a sync
+    // response with its audit row). ADD COLUMN is a no-op if it already exists.
+    const cols = d.prepare("PRAGMA table_info(sync_events)").all().map(function (c) { return c.name; });
+    if (cols.indexOf('execution_id') === -1) {
+        d.exec('ALTER TABLE sync_events ADD COLUMN execution_id TEXT');
+    }
+    d.exec('CREATE INDEX IF NOT EXISTS idx_sync_events_exec ON sync_events(execution_id)');
+
     return d;
 }
 
