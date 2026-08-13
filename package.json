@@ -1,0 +1,7 @@
+{
+  "name": "carc",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run.js"
+  }
+}

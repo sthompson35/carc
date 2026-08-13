@@ -1,0 +1,136 @@
+'use strict';
+// communication/governance.js
+
+    function governanceGateState() {
+        // Guard against being called before the global DATA is assigned — this function gets
+        // reached indirectly from inside migrateData() (via broadcast-transcript reconciliation
+        // for any conversation containing "everyone"/"roll call" text, which every Roll Call
+        // transcript seeds), i.e. while `DATA = migrateData(loadData())` is still executing and
+        // DATA is still undefined. Without this guard that call chain threw on every reload for
+        // any user who had ever run a roll call, crashing init() before anything got wired up.
+        if (typeof DATA === 'undefined' || !DATA) {
+            return { requirements: [], verified: 0, total: 0, registry: { controlled: 0, issues: [], valid: true }, complete: false, percent: 0 };
+        }
+        var reqs = (DATA.governance && DATA.governance.requirements) || [];
+        var verified = reqs.filter(function (r) { return r.status === 'VERIFIED'; }).length;
+        var registry = auditCanonicalRegistry(DATA.participants || []);
+        var complete = registry.valid && reqs.length > 0 && verified === reqs.length;
+        return { requirements:reqs, verified:verified, total:reqs.length, registry:registry, complete:complete, percent:reqs.length ? Math.round((verified / reqs.length) * 100) : 0 };
+    }
+
+    function reconcileProductionState() {
+        var gate = governanceGateState();
+        if (typeof DATA === 'undefined' || !DATA || !DATA.governance) return gate;
+        DATA.registryAudit = gate.registry;
+        DATA.governance.productionState = gate.complete ? 'PRODUCTION_VERIFIED' : 'NOT_RUNTIME_VERIFIED';
+        DATA.governance.productionGateDecision = gate.complete ? 'PASS' : 'HOLD';
+        DATA.governance.productionReason = gate.complete ? 'ALL_PRODUCTION_GATES_VERIFIED' : 'RUNTIME_EVIDENCE_AND_INDEPENDENT_VERIFICATION_REQUIRED';
+        DATA.governance.lifecycle = gate.complete ? 'PRODUCTION_VERIFIED' : 'MISSION_READY';
+        DATA.participants.forEach(function (p) {
+            if (!p.serviceMemberId) return;
+            p.readiness = (gate.complete && hasVerifiedCanaryExecutionFor(p.serviceMemberId)) ? 'PRODUCTION_VERIFIED' : evaluateIndividualReadiness(p);
+        });
+        return gate;
+    }
+
+    function addGovernanceLedger(type, text) {
+        DATA.governance.ledger = DATA.governance.ledger || [];
+        DATA.governance.ledger.unshift({ time:new Date().toISOString(), type:type || 'note', text:text });
+        if (DATA.governance.ledger.length > 200) DATA.governance.ledger = DATA.governance.ledger.slice(0,200);
+    }
+
+    function renderGovernancePage() {
+        if (!DATA.governance) return;
+        var releaseBadge = document.getElementById('govReleaseBadge');
+        if (releaseBadge) releaseBadge.textContent = (String(DATA.governance.release || '').match(/v[\d.]+/) || ['—'])[0];
+        var gate = reconcileProductionState();
+        var stages = [
+            { name:'DESIGN_BASELINE', state:'complete', note:'Canonical design + identity baseline established' },
+            { name:'MISSION_READY', state:gate.complete ? 'complete' : 'current', note:gate.complete ? 'Gate satisfied' : 'Current controlled state' },
+            { name:'PRODUCTION_VERIFIED', state:gate.complete ? 'complete' : 'locked', note:gate.complete ? 'Verified' : 'Locked until evidence gates pass' }
+        ];
+        document.getElementById('govLifecycleStrip').innerHTML = stages.map(function (x) { return '<div class="gate-stage '+x.state+'"><div class="stage-name">'+esc(x.name)+'</div><div class="stage-state">'+esc(x.note)+'</div></div>'; }).join('');
+        document.getElementById('govProductionBadge').textContent = DATA.governance.productionState;
+        document.getElementById('govProductionBadge').className = 'badge ' + (gate.complete ? 'badge-active' : 'badge-inactive');
+        document.getElementById('govGateProgress').style.width = gate.percent + '%';
+        var reasonText = String(DATA.governance.productionReason || '').replace(/_/g, ' ').toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); });
+        document.getElementById('govGateSummary').textContent = gate.verified + ' of ' + gate.total + ' production requirements independently verified · Registry ' + (gate.registry.valid ? 'PASS' : 'FAIL') + (reasonText ? ' · ' + reasonText : '');
+        document.getElementById('govGateRequirements').innerHTML = gate.requirements.map(function (r) {
+            var cls = r.status === 'VERIFIED' ? 'badge-active' : 'badge-inactive';
+            var isSystemManaged = r.id === 'independent_verification';
+            var btnLabel = isSystemManaged ? 'View (System-Managed)' : (r.status === 'VERIFIED' ? 'Review Evidence' : 'Record Evidence');
+            return '<div class="gate-item"><div class="gate-head"><div class="gate-name">'+esc(r.name)+(isSystemManaged?' <span class="text-xs text-muted">🔒</span>':'')+'</div><span class="badge '+cls+'">'+esc(r.status)+'</span></div><div class="gate-desc">'+esc(r.description)+'</div><div class="gate-meta">Evidence: '+esc(r.evidence || 'NOT RECORDED')+'<br>Verifier: '+esc(r.verifier || 'NOT RECORDED')+'</div><div class="mt-1"><button class="btn btn-outline btn-sm gov-evidence-edit" data-id="'+esc(r.id)+'">'+btnLabel+'</button></div></div>';
+        }).join('');
+        $all('.gov-evidence-edit').forEach(function (btn) { btn.addEventListener('click', function () { openGovernanceEvidenceModal(btn.getAttribute('data-id')); }); });
+        document.getElementById('govAuditBadge').textContent = gate.registry.valid ? 'PASS' : 'FAIL';
+        document.getElementById('govAuditBadge').className = 'badge ' + (gate.registry.valid ? 'badge-active' : 'badge-inactive');
+        document.getElementById('govAuditBody').innerHTML = '<div class="kv-row"><span>Controlled identities</span><b>'+gate.registry.controlled+' / '+(DATA.governance.canonicalRosterExpected||66)+'</b></div><div class="kv-row"><span>Integrity result</span><span class="'+(gate.registry.valid?'audit-ok':'audit-bad')+'">'+(gate.registry.valid?'PASS':'FAIL')+'</span></div>' + (gate.registry.issues.length ? '<div class="mt-1 text-xs">'+gate.registry.issues.map(function (x) { return '• '+esc(x); }).join('<br>')+'</div>' : '<div class="mt-1 text-xs text-muted">No missing canonical IDs, duplicate IDs, format violations, or callsign collisions detected.</div>');
+        var types={}; DATA.participants.filter(function(p){return p.serviceMemberId;}).forEach(function(p){types[p.type]=(types[p.type]||0)+1;});
+        renderBarList('govIdentityComposition', Object.keys(types).map(function(t){return {label:TYPE_LABELS[t]||t,value:types[t]};}), { colorFn:function(){return 'purple';} });
+        document.getElementById('govKpis').innerHTML = [
+            ['Canonical Identities',gate.registry.controlled+'/'+(DATA.governance.canonicalRosterExpected||66)],['Integrity Issues',gate.registry.issues.length],['Verified Gates',gate.verified+'/'+gate.total],['Production State',DATA.governance.productionState],['Lifecycle',DATA.governance.lifecycle],['Schema','v'+DATA.schemaVersion]
+        ].map(function(k){return '<div class="stat-card"><div class="label">'+esc(k[0])+'</div><div class="value" style="font-size:1.15rem">'+esc(k[1])+'</div></div>';}).join('');
+        renderRuntimeCanary();
+        renderCanarySweepSummary();
+        renderCanaryHistory();
+        renderExternalRuntime();
+        var ledger=(DATA.governance.ledger||[]).slice(0,30);
+        document.getElementById('govLedger').innerHTML = ledger.map(function(x){return '<div class="log-item"><span class="log-time">'+esc(fmtDate(x.time))+'</span><span class="log-event">'+esc(x.text)+'</span><span class="log-status info">'+esc(x.type)+'</span></div>';}).join('') || '<div class="text-muted text-sm">No governance ledger entries.</div>';
+    }
+
+    function openGovernanceEvidenceModal(id) {
+        var req = (DATA.governance.requirements || []).find(function(r){return r.id===id;}); if(!req) return;
+        if (req.id === 'independent_verification') {
+            var body = '<div class="form-group"><label>Requirement</label><input value="'+esc(req.name)+'" disabled></div>' +
+                '<p class="text-sm">This requirement is <b>system-managed</b> — it cannot be self-attested. It is set automatically only when the Runtime Execution Canary is submitted to a configured external endpoint and the verifier responds with <code>verified: true</code>.</p>' +
+                '<div class="kv-row"><span>Current Status</span><span class="badge '+(req.status==='VERIFIED'?'badge-active':'badge-inactive')+'">'+esc(req.status)+'</span></div>' +
+                (req.evidence ? '<div class="kv-row"><span>Evidence</span><span class="text-xs">'+esc(req.evidence)+'</span></div>' : '') +
+                (req.verifier ? '<div class="kv-row"><span>Verifier</span><b>'+esc(req.verifier)+'</b></div>' : '') +
+                '<p class="text-xs text-muted mt-2">To change this: Runtime Execution Canary panel → Run Canary → configure an External Runtime Endpoint → Submit for Verification.</p>';
+            openModal('Production Evidence — '+req.name, body, '<button class="btn btn-outline" id="geCancel">Close</button>');
+            document.getElementById('geCancel').addEventListener('click', closeModal);
+            return;
+        }
+        var body='<div class="form-group"><label>Requirement</label><input value="'+esc(req.name)+'" disabled></div><div class="form-group"><label>Evidence Reference</label><textarea id="geEvidence" rows="4" placeholder="Source record ID, telemetry reference, audit artifact, approval ID…">'+esc(req.evidence||'')+'</textarea></div><div class="form-group"><label>Independent Verifier</label><input id="geVerifier" value="'+esc(req.verifier||'')+'" placeholder="e.g. HELIX / TANGO / reviewer ID"></div><div class="form-group"><label>Status</label><select id="geStatus"><option value="PENDING">PENDING</option><option value="VERIFIED">VERIFIED</option></select></div><div class="text-xs text-muted">VERIFIED requires both an evidence reference and an independent verifier. CARC will not accept a bare status flip.</div>';
+        var footer='<button class="btn btn-outline" id="geCancel">Cancel</button><button class="btn btn-primary" id="geSave">Save Evidence</button>';
+        openModal('Production Evidence — '+req.name,body,footer); document.getElementById('geStatus').value=req.status;
+        document.getElementById('geCancel').addEventListener('click',closeModal);
+        document.getElementById('geSave').addEventListener('click',function(){var ev=document.getElementById('geEvidence').value.trim(), vr=document.getElementById('geVerifier').value.trim(), st=document.getElementById('geStatus').value; if(st==='VERIFIED' && (!ev || !vr)){showToast('error','❌ VERIFIED requires evidence and an independent verifier');return;} req.evidence=ev; req.verifier=vr; req.status=st; req.updatedAt=new Date().toISOString(); addGovernanceLedger('evidence',req.name+' → '+st+(vr?' · verifier '+vr:'')); reconcileProductionState(); saveData(); renderAll(); renderGovernancePage(); closeModal(); showToast('success','✅ Governance evidence saved');});
+    }
+
+    function openGovernanceNoteModal() {
+        var body='<div class="form-group"><label>Evidence / Change Note</label><textarea id="gnText" rows="5" placeholder="Record a controlled change, source reference, decision, exception, or verification note."></textarea></div>';
+        openModal('Add Governance Ledger Note',body,'<button class="btn btn-outline" id="gnCancel">Cancel</button><button class="btn btn-primary" id="gnSave">Add Note</button>');
+        document.getElementById('gnCancel').addEventListener('click',closeModal); document.getElementById('gnSave').addEventListener('click',function(){var t=document.getElementById('gnText').value.trim(); if(!t){showToast('error','❌ Enter a note');return;} addGovernanceLedger('note',t); saveData(); renderGovernancePage(); closeModal(); showToast('success','✅ Governance note added');});
+    }
+
+    function exportGovernanceEvidence() {
+        var gate=reconcileProductionState(), lines=['CARC Governance Evidence Export','Generated,'+new Date().toISOString(),'Release,'+csvEscape(DATA.governance.release),'Lifecycle,'+DATA.governance.lifecycle,'Production State,'+DATA.governance.productionState,'Registry Integrity,'+(gate.registry.valid?'PASS':'FAIL'),'','Requirement,Status,Evidence,Verifier,Updated'];
+        gate.requirements.forEach(function(r){lines.push([r.name,r.status,r.evidence||'',r.verifier||'',r.updatedAt||''].map(csvEscape).join(','));}); lines.push('','Ledger Time,Type,Entry'); (DATA.governance.ledger||[]).forEach(function(x){lines.push([x.time,x.type,x.text].map(csvEscape).join(','));}); downloadCSV('carc_governance_evidence_'+new Date().toISOString().slice(0,10)+'.csv',lines.join('\n')); showToast('success','⬇️ Governance evidence exported');
+    }
+
+    function wireGovernancePage() {
+        document.getElementById('btnGovAudit').addEventListener('click',function(){var a=auditCanonicalRegistry(DATA.participants); DATA.registryAudit=a; addGovernanceLedger('audit','Canonical registry audit → '+(a.valid?'PASS':'FAIL')+' ('+a.issues.length+' issues)'); saveData(); renderGovernancePage(); showToast(a.valid?'success':'error',(a.valid?'✅':'❌')+' Registry audit '+(a.valid?'passed':'failed'));});
+        document.getElementById('btnGovExport').addEventListener('click',exportGovernanceEvidence);
+        document.getElementById('btnGovAddNote').addEventListener('click',openGovernanceNoteModal);
+        document.getElementById('btnRunCanary').addEventListener('click',runRuntimeCanary);
+        document.getElementById('btnRunSweep').addEventListener('click',runRegistrySweep);
+        document.getElementById('btnExportCanary').addEventListener('click',exportRuntimeCanary);
+        document.getElementById('btnExportCanaryCsv').addEventListener('click',exportRuntimeCanaryCsv);
+        $all('th.sortable', document.getElementById('page-governance')).forEach(function (th) {
+            th.setAttribute('tabindex', '0');
+            th.setAttribute('role', 'button');
+            function toggleSort() {
+                var key = th.getAttribute('data-key');
+                if (canaryHistoryState.sortKey === key) canaryHistoryState.sortDir = canaryHistoryState.sortDir === 'asc' ? 'desc' : 'asc';
+                else { canaryHistoryState.sortKey = key; canaryHistoryState.sortDir = 'asc'; }
+                renderCanaryHistory();
+            }
+            th.addEventListener('click', toggleSort);
+            th.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort(); } });
+        });
+    }
+
+    // ================================================================
+    // ANALYTICS PAGE
+    // ================================================================
