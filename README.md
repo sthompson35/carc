@@ -4,9 +4,9 @@ A standalone, single-file admin dashboard for managing AI agent / council
 participants, conversations, and automated roll calls. No build step, no
 dependencies, no backend — open `index.html` in a browser and it runs.
 
-> **Note:** `index.pre_v3.15.0_backup.html` is a clean v3.14.0 snapshot kept
-> for reference. It is safe to delete once you no longer need to diff against
-> the pre-canary baseline.
+> **Note:** the old `index.pre_v3.15.0_backup.html` v3.14.0 snapshot has been
+> moved to `_archive/` (no longer needed for diffing against the pre-canary
+> baseline).
 
 ## What it is
 
