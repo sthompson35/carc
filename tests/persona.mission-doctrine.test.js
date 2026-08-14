@@ -2,10 +2,14 @@
 // tests/persona.mission-doctrine.test.js
 
 module.exports = {
-    modules: ['app/util.js', 'data/roster.js', 'persona/mission-doctrine.js'],
+    modules: ['app/util.js', 'data/roster.js', 'data/reference-profiles.js', 'persona/mission-doctrine.js'],
     run: function (ctx, assert) {
         var participants = ctx.ROSTER.map(function (r, idx) { return ctx.rosterToParticipant(r, idx); });
         var FIELDS = ['purpose', 'mission', 'duties', 'tasks', 'outputs'];
+
+        var vinnie = participants.find(function (p) { return p.callsign === '@VINNIE'; });
+        assert(vinnie.referenceProfile && vinnie.referenceProfile.provenance === 'UNVERIFIED_EXTERNAL_SOURCE', 'rosterToParticipant attaches a referenceProfile stamped UNVERIFIED_EXTERNAL_SOURCE');
+        assert(typeof vinnie.referenceProfile.skills === 'string' && vinnie.referenceProfile.skills.length > 0, 'referenceProfile carries real extracted content, not a stub');
 
         var grant = participants.find(function (p) { return p.serviceMemberId === 'ATA-GRANT-000'; });
         var derived = participants.find(function (p) { return p.serviceMemberId === 'ATA-VINNIE-000'; });

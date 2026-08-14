@@ -77,7 +77,7 @@
             var source = canonical[sid];
             var target = existingByService[sid];
             if (target) {
-                ['name','type','dept','callsign','callsignId','trooper','agentId','serviceMemberId','legacyAlias','role','missionProfile','canonicalStatus','readiness','sourceId'].forEach(function (k) { target[k] = source[k]; });
+                ['name','type','dept','callsign','callsignId','trooper','agentId','serviceMemberId','legacyAlias','role','missionProfile','canonicalStatus','readiness','sourceId','referenceProfile'].forEach(function (k) { target[k] = source[k]; });
             } else {
                 d.participants.push(source);
             }

@@ -270,6 +270,10 @@
                             '<div class="mt-1"><button class="btn btn-outline btn-sm ip-evidence-edit" data-pid="' + esc(p.id) + '" data-key="' + esc(def.key) + '">' + btnLabel + '</button></div></div>';
                     }).join('') + '</div></div>';
             })() +
+            (p.referenceProfile ? '<div class="mt-2"><strong class="text-sm">Reference Profile</strong> ' +
+                '<span class="badge badge-inactive" style="margin-left:4px;">UNVERIFIED</span> ' +
+                '<button class="btn btn-outline btn-sm rp-view" data-pid="' + esc(p.id) + '">View</button>' +
+                '<div class="text-xs text-muted mt-1">From an external source with no known origin — not cross-checked against any CARC evidence.</div></div>' : '') +
             '<div class="mt-2"><strong class="text-sm">Conversations (' + relatedConvs.length + ')</strong><div class="mt-1">' +
             (relatedConvs.length ? relatedConvs.map(function (c) { return '<span class="chip conv-detail-open" data-id="' + c.id + '" style="cursor:pointer;">' + esc(c.title) + '</span>'; }).join('') : '<span class="text-muted text-sm">No conversations yet</span>') +
             '</div></div>';
@@ -299,6 +303,32 @@
         $all('.fp-view').forEach(function (btn) {
             btn.addEventListener('click', function () { openFieldProvenanceModal(btn.getAttribute('data-pid')); });
         });
+        $all('.rp-view').forEach(function (btn) {
+            btn.addEventListener('click', function () { openReferenceProfileModal(btn.getAttribute('data-pid')); });
+        });
+    }
+
+    function openReferenceProfileModal(participantId) {
+        var p = DATA.participants.find(function (x) { return x.id === participantId; });
+        if (!p || !p.referenceProfile) return;
+        var rp = p.referenceProfile;
+        var rows = [
+            ['Authority (narrative)', rp.authorityNarrative],
+            ['Escalation', rp.escalation],
+            ['Default Format', rp.defaultFormat],
+            ['Pipeline Position', rp.pipelinePosition],
+            ['Settings', rp.settings],
+            ['Skills', rp.skills],
+            ['Operating Style', rp.operatingStyle],
+            ['Tools', rp.tools]
+        ];
+        var body = '<p class="text-sm audit-warn">⚠️ UNVERIFIED — extracted from a file found in the repository with no known origin. Not cross-checked against any CARC evidence. Informational only; never used for readiness, authorization, or production gating.</p>' +
+            rows.map(function (r) {
+                return '<div class="mt-1"><b>' + esc(r[0]) + '</b><div class="text-sm text-muted">' + esc(r[1] || '—') + '</div></div>';
+            }).join('') +
+            '<div class="mt-1"><b>Handoff Targets</b><div class="text-sm text-muted">' + ((rp.handoffTargets || []).map(esc).join(', ') || '—') + '</div></div>';
+        openModal('Reference Profile — ' + p.name, body, '<button class="btn btn-outline" id="rpClose">Close</button>');
+        document.getElementById('rpClose').addEventListener('click', closeModal);
     }
 
     function openFieldProvenanceModal(participantId) {
