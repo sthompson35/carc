@@ -53,6 +53,93 @@ verified two things that had never been examined before:
   verification in this project's history. See the new **External Runtime
   (optional)** section above for setup/run instructions.
 
+**v3.25.0** — Governed Alias & Legacy Identifier Registry (schema 19). Every
+canonical participant now carries two real, structured identity-resolution
+fields:
+- **`aliases[]`** — for future callsign-style aliases (`ALIAS_TYPES`:
+  `LEGACY_CALLSIGN` / `FORMER_CALLSIGN` / `HISTORICAL_NAME` / `IMPORT_ALIAS`,
+  7-state `ALIAS_STATUS` lifecycle). Empty for all 66 identities today — no
+  fabricated alias data.
+- **`legacyIds[]`** — non-destructively seeded from the existing
+  `legacyAlias` field on migration (one real entry per identity,
+  `type: 'LEGACY_ID'`, `status: 'ACTIVE'`), so no per-identity information is
+  invented.
+- **`resolveCanonicalIdentity(input)`** — a single-precedence identity
+  resolver (canonical ID > canonical callsign > legacy ID > active-verified
+  alias), wired into every real place CARC turns user-typed text into a
+  participant: Agent Chat `@mention`/explicit-target routing, the Runtime
+  Canary target lookup, and Admin Tool ID Lookup (which gained genuine
+  collision detection for the first time — it previously returned the first
+  match silently, with no way to signal "multiple identities match"). It is a
+  **pure identity lookup only** — it never inspects readiness, authorization,
+  or execution state; callers that need authorization still call
+  `evaluateCanaryAuthorization` separately on the resolved participant.
+  Throws `IDENTITY_NOT_REGISTERED:<input>` or
+  `ALIAS_IDENTITY_COLLISION:<input>` on failure; every call site translates
+  these back to its own existing null/no-match contract rather than
+  propagating a new error type.
+- **`auditAliasRegistry()`** — checks every alias/legacy-ID for missing or
+  mismatched canonical targets, alias chains (an alias can only point at a
+  real canonical callsign, never at another alias — `@OLD_A → @OLD_B →
+  @BARBARA` cannot resolve, by construction, not by a separate rule check),
+  cross-member collisions, unverified-but-active aliases, and
+  expired/not-yet-active validity windows. Blockers fold into the existing
+  Registry Integrity issue list; warnings render in a new
+  `.audit-warn`-styled panel on the Governance page (CSS that had existed,
+  unused, since an earlier version).
+- Participant detail modal gained read-only **Legacy Identifiers** /
+  **Aliases** sections (no add/edit workflow yet — this pass is data model,
+  resolver, and validation only).
+- Verified live: all 7 pages render with zero console errors; unit tests
+  cover the resolver's 4-tier precedence (including the invariant that a real
+  canonical identity always outranks an alias) and every audit rule
+  individually; `node tests/run.js` and backend `smoke`/`e2e` pass clean.
+
+**v3.24.0** — Authority, Runtime Verification & Identity Profile Registry
+(schema 18):
+- **`authorityProfile`** — wraps the existing canary-authorization gate
+  together with the mission profile's `authority` provenance label
+  (`CONVERSATION_CONFIRMED` / `ROLE_DERIVED_WORKING`) into one per-identity,
+  computed-and-persisted field, reusing the same compute/persist discipline
+  `readiness` established in v3.22.0.
+- **`runtimeVerification`** — a per-identity field derived from real canary
+  execution history (`verified`, `lastExecutionId`, `lastVerifiedAt`,
+  `independentVerification`), read newest-execution-first, so a "runtime
+  verified" claim is always traceable to one specific execution record
+  rather than a global flag.
+- **`personaProfile` / `communicationProfile` / `handoffProfile`** — three
+  new honest, empty-by-default evidence-gated structures
+  (`{status:'PENDING', evidence:'', verifier:''}`), following the same
+  `PENDING → VERIFIED` discipline as the Knowledge Path and Production
+  Verification Gate — nothing pre-filled, no fabricated claim of
+  persona/communication/handoff readiness where none has actually been
+  recorded.
+- Participant detail modal gained read-only Authority Profile / Runtime
+  Verification rows and a 3-card Identity Profiles evidence-gate section.
+- Verified live: all 7 pages render with zero console errors; migration
+  correctly recomputes `authorityProfile`/`runtimeVerification` fresh on
+  every pass (never preserved, since they're fully computed — same as
+  `readiness`) while never clobbering already-recorded persona/communication/
+  handoff evidence (which, unlike the computed fields, carries real
+  hand-attested progress once used).
+
+**v3.23.0** — Canonical Knowledge-Path Registry (schema 17). Every controlled
+identity now carries an honest, per-identity 10-stage pipeline: competencies
+→ curriculum modules → governed sources → tools → permissions → exercises →
+assessment → certification → mission eligibility → review acknowledgement.
+- Each stage starts `PENDING` and requires genuine evidence plus a named
+  verifier to reach `VERIFIED` — mission eligibility is the one automatic
+  exception, computed from the 8 prerequisite stages rather than manually
+  attested.
+- No content is pre-filled; the pipeline starts empty for all 66 identities
+  on migration, and re-running migration never clobbers already-recorded
+  stage progress.
+- Participant detail modal gained a Knowledge Path evidence-gate section
+  (`.gate-grid`, matching the Governance page's existing per-requirement card
+  pattern).
+- Verified live: all 7 pages render with zero console errors; every one of
+  the 66 identities' knowledge paths starts at 0/10 stages complete.
+
 **v3.22.0** — Individual Readiness & Production Verification Reconciliation
 (schema 16). Prompted by a reconciliation report claiming analysis of an
 `AI Training Academy Roster.pdf` — no such file was ever uploaded to this
@@ -662,6 +749,7 @@ multi-page dashboard described below.
 | **Agent** | Roll-call agent status & controls (run now, pause/resume auto mode, interval, editable name, alert threshold, upcoming schedule), a searchable/sortable/exportable roll-call history grid with undo, and a rule-based chat assistant (with typing indicator, clear, export transcript) that answers questions from live data |
 | **Governance** | Lifecycle strip, KPI stats, Production Verification Gate with per-requirement evidence tracking, Canonical Registry Integrity audit, Identity Composition breakdown, Change & Evidence Ledger, Runtime Execution Canary (Run/Export controls, telemetry log), External Runtime Endpoint (configure URL + bearer token, test connection, submit for external verification), External Verification Response (verifier ID, signature, RUNTIME_VERIFIED / REJECTED state) |
 | **Analytics** | KPI summary row, message activity, peak hours, sentiment, department/type/status breakdowns (click-through to filtered Participants/Conversations), participant growth over time, attendance trend with range selector, CSV report export |
+| **Admin** | System Overview (clickable KPI tiles), Preferences (theme, auto-mode, default page size, alert threshold), Participant Types & Roles Registry, Data Management (storage/counts/registry integrity/production state/schema version at a glance, backup export/import, Participants CSV shortcut), Activity/Audit Log (searchable/sortable/paginated, CSV export), 🧰 Tools panel (Canonical ID Lookup, Duplicate/Collision Checker, Bulk Department Find & Replace, Storage Cleanup, Backup Diff), Danger Zone |
 
 ## Global toolbar
 
@@ -678,7 +766,7 @@ command-palette search (`Ctrl+K`).
 | `Ctrl+I` | Import data from JSON |
 | `Ctrl+N` | New conversation |
 | `Ctrl+K` | Search / command palette |
-| `1`–`6` | Jump to Dashboard / Participants / Conversations / Agent / Governance / Analytics |
+| `1`–`7` | Jump to Dashboard / Participants / Conversations / Agent / Governance / Analytics / Admin |
 | `Esc` | Close open modal |
 
 ## Data & persistence
@@ -694,6 +782,96 @@ load, without the user losing local edits.
 
 Export produces a JSON file compatible with Import, so data can be moved
 between browsers/machines manually.
+
+## Identity & Governance Data Model (schema 17–19)
+
+Formal reference for the three per-identity registries added across schema
+versions 17–19 (see the v3.23.0–v3.25.0 changelog entries above for the
+narrative version). All three follow the discipline `readiness` established
+in v3.22.0: real, computed-and-persisted fields; `PENDING`-by-default where
+evidence is required; migration steps that touch only the local migration
+parameter, never global `DATA`, so backfilling never depends on `DATA`
+already being assigned.
+
+### Knowledge Path — schema 17 (`persona/knowledge-path.js`)
+
+`p.knowledgePath.stages` — a fixed 10-stage array, identical shape for all 66
+identities: competencies, curriculum modules, governed sources, tools,
+permissions, exercises, assessment, certification, mission eligibility,
+review acknowledgement. Each stage is
+`{key, name, status:'PENDING'|'VERIFIED', evidence:'', verifier:''}`. Mission
+eligibility is the one stage that is *computed*, not hand-attested — it
+derives automatically from whether the 8 prerequisite stages are `VERIFIED`.
+`getPipelineProfile(p)` returns `p.knowledgePath` as-is; nothing is
+synthesized.
+
+### Authority Profile, Runtime Verification & Identity Profiles — schema 18 (`persona/identity.js`, `persona/identity-profiles.js`)
+
+- `p.authorityProfile` — `{provenance, gate, computedAt}`, where `provenance`
+  is the mission profile's `authority` label
+  (`CONVERSATION_CONFIRMED`/`ROLE_DERIVED_WORKING`) and `gate` is the exact
+  result of `evaluateCanaryAuthorization(p)` (`{allowed, reason}` —
+  `TARGET_NOT_FOUND` / `TARGET_INACTIVE` / `CANONICAL_IDENTITY_INCOMPLETE` /
+  `MISSION_PROFILE_MISSING` / `REGISTRY_INTEGRITY_FAILED` /
+  `LOCAL_CANARY_AUTHORIZATION_PASS`).
+- `p.runtimeVerification` — `{verified, lastExecutionId, lastVerifiedAt,
+  independentVerification, computedAt}`, derived by scanning
+  `DATA.runtimeCanary.executions` for this identity's most recent execution
+  (verified one preferred, else the most recent unverified one).
+- `p.personaProfile` / `p.communicationProfile` / `p.handoffProfile` — each
+  `{status:'PENDING'|'VERIFIED', evidence:'', verifier:''}`. Defined in
+  `IDENTITY_PROFILE_DEFS`; backfilled only if absent, never overwritten, so
+  real recorded evidence survives re-migration.
+
+Both `evaluateAuthorityProfile` and `evaluateRuntimeVerification` accept an
+explicit `participantsOverride`/`executionsOverride` parameter instead of
+reading global `DATA` directly — the same migration-safety pattern used
+throughout this data model, and the reason these can be called from inside
+`schemas/migrate.js` without risk of the v3.19.0 "`DATA` still undefined"
+crash class.
+
+### Aliases & Legacy Identifiers — schema 19 (`persona/alias-registry.js`)
+
+```
+ALIAS_STATUS = PROPOSED | SOURCE_VALIDATED | ACTIVE | DEPRECATED | EXPIRED | RETIRED | BLOCKED
+ALIAS_TYPES  = LEGACY_CALLSIGN | FORMER_CALLSIGN | HISTORICAL_NAME | IMPORT_ALIAS
+```
+
+- **`p.aliases[]`** — `{value, normalizedValue, type, canonicalTarget,
+  canonicalTargetId, sourceRecordId, status, verified, validFrom, validTo,
+  reason}`. An alias resolves only when `status === 'ACTIVE'` **and**
+  `verified === true` — "active verified" is that exact conjunction, not
+  either condition alone.
+- **`p.legacyIds[]`** — `{value, normalizedValue, type:'LEGACY_ID',
+  canonicalTargetId, sourceRecordId, status, validFrom, validTo, reason}`.
+  `LEGACY_ID` is deliberately not a member of `ALIAS_TYPES` — it's a fixed
+  value in a separate namespace from `aliases[]`.
+- **`resolveCanonicalIdentity(input, participantsOverride?)`** — normalizes
+  `input` (trim, uppercase, strip a leading `@`) and resolves in strict
+  precedence order: canonical ID (`serviceMemberId`/`callsignId`/`agentId`/
+  `sourceId`) → canonical callsign → `legacyIds[]` → active-verified
+  `aliases[]`. Throws `Error('IDENTITY_NOT_REGISTERED:' + input)` on no
+  match, `Error('ALIAS_IDENTITY_COLLISION:' + input)` if more than one
+  identity has an active-verified alias for the same normalized value. Pure
+  lookup — no authorization, readiness, or production-state logic inside it.
+- **`auditAliasRegistry(participants)`** → `{passed, blockers, warnings}`.
+  Blocker codes: `ALIAS_CANONICAL_TARGET_MISSING`,
+  `ALIAS_CANONICAL_TARGET_ID_MISSING`, `ALIAS_CHAIN_OR_UNRESOLVED_TARGET`,
+  `ALIAS_TARGET_ID_MISMATCH`, `ALIAS_EQUALS_CANONICAL_CALLSIGN`,
+  `ALIAS_IDENTITY_COLLISION`, `LEGACY_ID_DUPLICATE_ACROSS_MEMBERS`. Warning
+  codes: `ALIAS_DUPLICATE_ON_MEMBER`, `ALIAS_SOURCE_RECORD_MISSING`,
+  `ALIAS_ACTIVE_UNVERIFIED`, `ALIAS_EXPIRED`, `ALIAS_NOT_YET_ACTIVE`.
+  `auditCanonicalRegistry()` calls this internally and folds blocker text
+  into its existing flat `issues` array, so every pre-existing consumer of
+  the registry audit reflects real alias problems with no code changes on
+  their end.
+
+**Real-world state as of schema 19**: `aliases[]` is empty for all 66
+identities (no alias has ever been proposed); `legacyIds[]` has exactly one
+entry per identity, seeded non-destructively from the pre-existing
+`legacyAlias` string field. `auditAliasRegistry()` therefore currently
+reports zero blockers and zero warnings — the validation engine exists and
+is fully tested, but has no real bad data to flag yet.
 
 ## External Runtime (optional)
 
@@ -730,6 +908,159 @@ a real verifier ID — the first genuinely non-simulated verification in this
 project's history. It correctly did *not* cascade into `PRODUCTION_VERIFIED`
 for VEX, because the other five system-wide governance requirements were
 still unattested — exactly the intended behavior (see v3.22.0 below).
+
+## Division → Purpose → Mission → Task Reference (66 identities)
+
+**Source and provenance.** The tables below reconcile six `.txt` files found
+in the repository root this session (`FULL ROSTER ROLL CALL — DIVISION
+REPORT.txt`, `PURPOSE REPORT.txt`, `MISSION REPORT.txt`, `PRIMARY TASK
+1.txt`, plus a `TASK REPORT.txt` and `PRIMARY TASK 2.txt` not reproduced
+here — see below). Like three earlier unexplained-content appearances in
+this project's history (the original "AI Training Academy" HTML dump, an
+`AI Training Academy Roster.pdf` reconciliation report, and an `Ultimate AI
+Training Academy` folder), **no upload or generation event for these six
+files exists in this session** — their origin is unknown. They were not
+authored by CARC's code and are not read by it anywhere.
+
+What was independently verified before incorporating this content, by
+cross-checking directly against `data/roster.js` and
+`persona/mission-doctrine.js`:
+- **All 66 callsigns match exactly** — no extra, missing, or misspelled
+  identities relative to the live roster.
+- **Only 3 of the 66 have a real, hand-attested profile in CARC's code**:
+  `@GRANT`, `@SALLY`, `@MAPE` (`CONFIRMED_MISSION_PROFILES` in
+  `persona/mission-doctrine.js`, `authority: 'CONVERSATION_CONFIRMED'`). The
+  other 63 have only a generic, role-substituted `ROLE_DERIVED_WORKING`
+  template — CARC has never recorded a real purpose/mission/task profile for
+  them. The **Profile Authority** column below reflects this live-code
+  value, not anything from the source files (which carry no such label at
+  all).
+- **Even for the 3 confirmed identities, this report's wording is a
+  paraphrase of the real profile, not a verbatim copy.** E.g. `@GRANT`'s
+  purpose sentence matches CARC's confirmed profile exactly, but its mission
+  sentence does not; `@SALLY`'s and `@MAPE`'s purpose/mission text differ in
+  wording (same substance) from `persona/mission-doctrine.js`. Read this
+  table as reference material suggested by an unverified source, never as a
+  quote of CARC's own confirmed data.
+- **The Division grouping does not always match each member's real
+  `command` field.** Most differences are cosmetic (`Academy Growth
+  Operations` → `Growth Operations`) or a reasonable consolidation of
+  several distinct one/two-member live departments under one broader label
+  (e.g. `Systems Engineering` here covers four different live `command`
+  values: `Technology Command`, `Data Command`, `Automation Command`,
+  `Security Command`). One case has no such explanation: **`@MAPE`'s live
+  `command` is `Academy Program Management`, shared with no other roster
+  member at all**, yet this report places `@MAPE` inside `Growth
+  Operations` alongside 8 identities whose live `command` really is
+  `Academy Growth Operations`. Flagged here, not silently corrected — the
+  live `command` values are shown alongside every division so this can be
+  checked directly.
+
+**Not reproduced inline**: the source `TASK REPORT.txt` (a fuller,
+semicolon-delimited recurring-task list per identity — verbose, and
+overlaps substantially with the Primary Task column below) and `PRIMARY
+TASK 2.txt` (a second task axis with no live-code analog to attribute it
+to). Both files remain in the repository root, unmodified, for anyone who
+wants the fuller, equally-unverified detail.
+
+### Division membership
+
+| Division (this report) | Members | Live `command` value(s) in `data/roster.js` |
+|---|---|---|
+| **Academy Business Services** | @VINNIE, @BOBBY, @CASSIE, @CEEVEE, @EMMI, @INTI | `Academy Business Services` |
+| **Academy Support Operations** | @CINDY, @VICTOR | `Academy Support Operations` |
+| **Growth Operations** | @ADAM, @BARBARA, @CELIA, @DIMARKO, @DIPEDI, @MAPE, @SEBO, @SOPHIE, @VEX | `Academy Growth Operations`, `Academy Program Management` |
+| **Sales Operations** | @CENA, @SIENNA | `Academy Sales Operations` |
+| **Social Operations** | @CARA, @FEBO, @INSTAR, @LINX, @SANDRA, @XAVIER, @VIDDI | `Academy Social Operations` |
+| **Creative & Content Operations** | @DINA, @CODY | `Academy Writing Operations` |
+| **Funding Operations** | @GRANT | `Academy Funding Operations` |
+| **Executive Administration** | @SALLY | `Academy Executive Administration` |
+| **Strategic Command** | @TROOPER_ALPHA, @TROOPER_TITAN, @TROOPER_OMEGA | `Strategic Command`, `Executive Command`, `AI Command` |
+| **Mission & Operations Command** | @ATLAS, @TROOPER_SIGMA | `Operations Command` |
+| **Quality & Verification** | @HELIX | `Independent Assurance` |
+| **Knowledge & Training** | @ATHENA, @TROOPER_YANKEE | `Knowledge Command`, `Academy Command` |
+| **Real Estate — Acquisition & Investment** | @TROOPER_BRAVO, @TROOPER_CHARLIE, @TROOPER_DELTA, @TROOPER_ECHO, @TROOPER_FOXTROT, @TROOPER_GOLF, @TROOPER_HOTEL, @TROOPER_INDIA | `Real Estate Operations` |
+| **Capital & Funding** | @TROOPER_KILO, @TROOPER_JULIET | `Capital Operations` |
+| **Legal, Compliance & Finance** | @TROOPER_MIKE, @TROOPER_LIMA | `Legal & Compliance`, `Finance & Governance` |
+| **Systems Engineering** | @ARCHITECT, @TROOPER_ROMEO, @TROOPER_QUEBEC, @TROOPER_OSCAR, @TROOPER_SIERRA | `Technology Command`, `Data Command`, `Automation Command`, `Security Command` |
+| **Data & Intelligence** | @TROOPER_PAPA | `Telemetry & Analytics` |
+| **Web3 Operations** | @TROOPER_NOVEMBER | `Web3 Command` |
+| **Brand & Commerce** | @TROOPER_WHISKEY, @TROOPER_VICTOR, @TROOPER_UNIFORM | `Brand Command`, `Growth Command`, `Commerce Command` |
+| **Creative Production** | @NOVA, @TROOPER_XRAY | `Creative Command`, `Media Command` |
+| **Logistics Operations** | @TROOPER_TANGO | `Logistics Command` |
+| **Research & Reconnaissance** | @ORION, @TROOPER_ZULU | `Recon Command` |
+| **Innovation & Resilience** | @TROOPER_PHOENIX | `Continuity & R&D` |
+
+### Purpose, Mission & Primary Task
+
+| Callsign | Profile Authority (live code) | Purpose *(unverified source)* | Mission *(unverified source)* | Primary Task *(unverified source)* |
+|---|---|---|---|---|
+| @VINNIE | ROLE_DERIVED_WORKING | Ensure virtual-assistant work is organized, reliable, context-aware, and operationally successful. | Provide expert virtual-assistant guidance, assistant-success support, and operational coordination through the governed Academy command chain. | Intake and validate operational requests before execution or specialist routing. |
+| @BOBBY | ROLE_DERIVED_WORKING | Convert business opportunities and challenges into practical strategies for sustainable growth. | Develop actionable business strategies, growth tactics, and operating recommendations that advance approved business objectives. | Analyze business conditions and identify actionable growth opportunities. |
+| @CASSIE | ROLE_DERIVED_WORKING | Move approved clients from sale to organized, complete, and successful operational activation. | Move approved B2B clients through a complete, controlled onboarding and activation process with requirements, ownership, documentation, and handoffs preserved. | Capture and validate client onboarding requirements. |
+| @CEEVEE | ROLE_DERIVED_WORKING | Transform verified professional experience into accurate, compelling, role-relevant career documents. | Develop accurate, role-targeted CVs and career documents that communicate verified experience, capabilities, and accomplishments effectively. | Gather and validate the professional history required for career documents. |
+| @EMMI | ROLE_DERIVED_WORKING | Increase spreadsheet competency and convert structured data into understandable, usable business information. | Build spreadsheet competency and provide reliable spreadsheet/data-operating guidance from foundational through advanced workflows. | Teach and guide spreadsheet operations appropriate to the user's competency and objective. |
+| @INTI | ROLE_DERIVED_WORKING | Improve interview readiness through realistic practice, objective evaluation, and targeted remediation. | Prepare candidates for interviews through realistic simulations, structured evaluation, targeted feedback, and measurable readiness improvement. | Analyze the target role and establish interview-readiness requirements. |
+| @CINDY | ROLE_DERIVED_WORKING | Protect customer experience by ensuring service interactions are clear, respectful, responsive, and resolution-oriented. | Improve customer-service outcomes through practical guidance, controlled issue handling, effective communication, and appropriate escalation. | Classify the customer-service issue and determine the required resolution path. |
+| @VICTOR | ROLE_DERIVED_WORKING | Resolve product-related client questions through accurate diagnosis, guidance, escalation, and documented resolution. | Diagnose and resolve client product queries accurately while documenting unresolved defects and routing them to the appropriate owner. | Intake and diagnose client product queries. |
+| @ADAM | ROLE_DERIVED_WORKING | Improve paid acquisition efficiency by converting advertising data into controlled optimization decisions. | Improve advertising performance and conversion efficiency through governed campaign analysis, experimentation, measurement, and optimization. | Audit advertising campaign performance against approved conversion objectives. |
+| @BARBARA | ROLE_DERIVED_WORKING | Turn validated search demand and business objectives into useful, discoverable, authoritative content. | Produce useful, search-aligned content that satisfies validated audience intent and advances approved organic-growth objectives. | Analyze validated search intent before developing SEO content. |
+| @CELIA | ROLE_DERIVED_WORKING | Create relevant outbound conversations that convert qualified prospects into legitimate sales opportunities. | Generate qualified conversations through relevant, evidence-supported cold-email strategy, messaging, testing, and follow-up. | Research and qualify prospects before cold-email outreach. |
+| @DIMARKO | ROLE_DERIVED_WORKING | Align market intelligence, positioning, messaging, channels, and campaigns into coherent marketing strategy. | Design integrated marketing strategies that align audience, positioning, message, offer, channels, campaigns, and measurable business outcomes. | Analyze the market, audience, offer, and positioning before establishing marketing strategy. |
+| @DIPEDI | ROLE_DERIVED_WORKING | Convert validated customer and market problems into products, requirements, improvements, and measurable value. | Translate validated market and customer needs into governed product concepts, requirements, development priorities, improvements, and value delivery. | Gather and validate customer and market problems before defining product requirements. |
+| @MAPE | CONVERSATION_CONFIRMED | Convert strategic objectives into governed programs, projects, milestones, dependencies, stage gates, and realized benefits. | Architect and govern the enterprise program/project portfolio from strategic objective through programs, projects, milestones, dependencies, stage gates, benefits realization, and closure. | Translate approved operating objectives into governed program and project architecture. |
+| @SEBO | ROLE_DERIVED_WORKING | Produce evidence-based SEO intelligence that improves discoverability and organic-search decision making. | Produce actionable SEO intelligence through keyword, SERP, search-intent, competitor, technical, and performance analysis. | Conduct keyword, SERP, and search-intent research. |
+| @SOPHIE | ROLE_DERIVED_WORKING | Reduce competitive uncertainty by transforming market and competitor evidence into decision intelligence. | Continuously transform verified competitor and market information into actionable strategic intelligence and early-warning signals. | Identify and validate competitors and relevant market conditions. |
+| @VEX | ROLE_DERIVED_WORKING | Increase the probability that valuable content earns attention without sacrificing factual integrity. | Engineer and test high-performing hooks and attention mechanisms that improve content engagement while preserving the approved factual message. | Engineer multiple high-potential hooks from an approved factual message and audience objective. |
+| @CENA | ROLE_DERIVED_WORKING | Represent and analyze the target buyer so sales, product, and marketing decisions remain grounded in actual customer needs and objections. | Build and apply evidence-based client-avatar intelligence so sales, marketing, and product decisions reflect the target buyer's actual needs, motivations, and objections. | Gather customer evidence required to establish the target client avatar/ICP. |
+| @SIENNA | ROLE_DERIVED_WORKING | Turn qualified demand into controlled sales opportunities, pipeline progression, and revenue. | Design and operate sales strategies that qualify opportunities, advance legitimate prospects, manage objections, and improve conversion and revenue performance. | Qualify sales opportunities against the approved customer and offer criteria. |
+| @CARA | ROLE_DERIVED_WORKING | Extend the useful life and reach of approved content by adapting it intelligently across formats and channels. | Convert approved source content into platform-appropriate derivative assets while preserving source meaning, campaign objective, and brand integrity. | Inventory and validate approved source content before repurposing. |
+| @FEBO | ROLE_DERIVED_WORKING | Build effective Facebook communication and community engagement around approved business objectives. | Execute Facebook-specific communication and engagement strategies aligned with approved social, marketing, and community objectives. | Translate approved campaigns and content into Facebook-specific execution. |
+| @INSTAR | ROLE_DERIVED_WORKING | Translate approved campaigns into Instagram-native communication designed for clarity, attention, and engagement. | Execute Instagram-specific content and engagement strategies optimized for approved audience, campaign, creative, and performance objectives. | Translate approved campaigns and creative into Instagram-specific execution. |
+| @LINX | ROLE_DERIVED_WORKING | Build professional credibility and business relevance through effective LinkedIn communication. | Execute LinkedIn communication that strengthens professional credibility, authority, relationships, and approved business-development objectives. | Translate approved business objectives into LinkedIn-specific professional communication. |
+| @SANDRA | ROLE_DERIVED_WORKING | Coordinate social strategy, channel specialists, content distribution, schedules, and performance into one controlled social operation. | Orchestrate social strategy and cross-platform execution by coordinating specialists, content, schedules, campaigns, KPIs, and optimization. | Establish and coordinate the cross-platform social strategy and execution plan. |
+| @XAVIER | ROLE_DERIVED_WORKING | Operate timely, concise X communication that supports approved campaigns, conversations, and intelligence objectives. | Execute timely X/Twitter communication and engagement aligned with approved campaigns, audience conversations, and intelligence objectives. | Translate approved campaigns and conversations into timely X-specific communication. |
+| @VIDDI | ROLE_DERIVED_WORKING | Transform approved messages into short-form video concepts optimized for attention, retention, and action. | Develop short-form video concepts, scripts, hooks, pacing, and production requirements designed to improve attention, retention, and action. | Develop the short-form video concept and opening hook from the approved message. |
+| @DINA | ROLE_DERIVED_WORKING | Convert communication objectives into usable, brand-aligned digital creative assets. | Produce and coordinate brand-aligned digital creative assets that satisfy approved communication, campaign, format, and production requirements. | Translate approved creative requirements into usable digital-asset specifications. |
+| @CODY | ROLE_DERIVED_WORKING | Improve the clarity, persuasion, credibility, and conversion strength of approved messaging. | Develop and optimize persuasive copy that improves clarity, credibility, relevance, response, and conversion without introducing unsupported claims. | Convert an approved communication objective into clear, persuasive, evidence-supported copy. |
+| @GRANT | CONVERSATION_CONFIRMED | Identify and secure legitimate external funding aligned with approved Dynasty missions. | Discover, evaluate, structure, and coordinate legitimate external funding opportunities aligned with approved Dynasty missions and applicant eligibility. | Identify legitimate funding programs from authoritative sources that align with the approved project and applicant. |
+| @SALLY | CONVERSATION_CONFIRMED | Preserve executive administrative control by ensuring correspondence, actions, documents, approvals, signatures, meetings, and deadlines reach the correct owner and completion state. | Control executive correspondence, administrative actions, document routing, signatures, approvals, follow-up, meeting actions, deadlines, briefings, and administrative continuity. | Intake, classify, and route executive correspondence and administrative actions. |
+| @TROOPER_ALPHA | ROLE_DERIVED_WORKING | Translate executive vision into controlled strategic priorities for the Academy operating system. | Translate executive vision and enterprise priorities into controlled strategic direction and clearly prioritized objectives for downstream execution. | Translate executive directives into prioritized strategic objectives. |
+| @TROOPER_TITAN | ROLE_DERIVED_WORKING | Protect enterprise alignment, accountability, and strategic control across major Academy operations. | Maintain enterprise-level strategic oversight by identifying material conflicts, accountability gaps, systemic risk, and decisions requiring command attention. | Review enterprise operations for material strategic alignment, accountability, and systemic-risk issues. |
+| @TROOPER_OMEGA | ROLE_DERIVED_WORKING | Resolve complex, ambiguous, multi-domain problems through disciplined reasoning and structured synthesis. | Analyze complex multi-domain problems, reconcile evidence and uncertainty, evaluate alternatives, and produce structured decision intelligence. | Decompose complex multi-domain problems into structured decision components. |
+| @ATLAS | ROLE_DERIVED_WORKING | Convert approved programs, projects, and milestones into coordinated mission execution and accountable deliverables. | Convert approved programs, projects, and milestones into executable missions with accountable owners, coordinated domain teams, deliverables, dependencies, and completion evidence. | Convert an approved milestone into an executable mission plan with owners, deliverables, and dependencies. |
+| @TROOPER_SIGMA | ROLE_DERIVED_WORKING | Maintain operational flow by controlling workflows, dependencies, exceptions, queues, and execution bottlenecks. | Maintain operational continuity by controlling workflows, queues, dependencies, exceptions, bottlenecks, recovery actions, and execution-state visibility. | Monitor operational workflows for bottlenecks, stalled work, dependencies, and exceptions. |
+| @HELIX | ROLE_DERIVED_WORKING | Protect production integrity through independent, evidence-bound verification of claimed outcomes and readiness. | Independently test claimed outcomes, inspect evidence, reproduce applicable checks, and issue evidence-bound `PASS / HOLD / FAIL` verification decisions. | Independently inspect the evidence supporting a claimed outcome or readiness state. |
+| @ATHENA | ROLE_DERIVED_WORKING | Preserve authoritative institutional knowledge, doctrine, provenance, lineage, and operational learning. | Preserve, validate, organize, reconcile, and govern authoritative Academy knowledge, doctrine, provenance, lineage, lessons learned, and supersession history. | Validate the source, provenance, authority, and lineage of knowledge entering controlled Academy doctrine. |
+| @TROOPER_YANKEE | ROLE_DERIVED_WORKING | Convert controlled doctrine and knowledge into teachable, assessable, repeatable operational competency. | Convert approved doctrine and operational knowledge into structured training, exercises, assessments, competency standards, remediation, and readiness evidence. | Convert approved doctrine into defined learning objectives and competency requirements. |
+| @TROOPER_BRAVO | ROLE_DERIVED_WORKING | Discover and qualify real-estate acquisition opportunities before expensive underwriting and negotiation resources are committed. | Discover, intake, investigate, and qualify real-estate acquisition opportunities before they advance into full underwriting and negotiation. | Intake and qualify real-estate acquisition leads before full underwriting. |
+| @TROOPER_CHARLIE | ROLE_DERIVED_WORKING | Protect investment capital by determining whether real-estate opportunities satisfy approved economic and risk criteria. | Underwrite real-estate opportunities using validated assumptions, ARV, repairs, acquisition cost, MAO, margins, ROI, downside scenarios, and approved `GO / RENEGOTIATE / KILL` criteria. | Validate property facts and establish the financial underwriting baseline. |
+| @TROOPER_DELTA | ROLE_DERIVED_WORKING | Convert approved acquisition economics into controlled negotiations and executable deal terms. | Execute controlled real-estate negotiations within approved economics, authority, concession limits, risk parameters, and walk-away conditions. | Establish the approved negotiation range, target, concessions, and walk-away position. |
+| @TROOPER_ECHO | ROLE_DERIVED_WORKING | Convert approved real-estate inventory into qualified disposition opportunities and controlled exits. | Position approved real-estate inventory for disposition, identify qualified buyers and exit paths, manage offer intelligence, and advance controlled transactions toward closing. | Package approved real-estate inventory for qualified disposition. |
+| @TROOPER_FOXTROT | ROLE_DERIVED_WORKING | Translate physical property conditions into realistic scope, cost, sequencing, contingency, and value-add intelligence. | Convert property-condition evidence into realistic rehab scope, quantities, costs, sequencing, contingency, risk, and value-add intelligence. | Convert property-condition evidence into a categorized rehab scope. |
+| @TROOPER_GOLF | ROLE_DERIVED_WORKING | Evaluate and support rental assets as durable cash-flowing investments using disciplined operating economics. | Evaluate and manage rental-investment economics through rent, vacancy, expenses, NOI, debt service, reserves, cash flow, returns, and operating-risk analysis. | Establish validated rental-income and operating-expense assumptions. |
+| @TROOPER_HOTEL | ROLE_DERIVED_WORKING | Convert viable sites and development opportunities into structured, feasible development initiatives. | Evaluate and structure development opportunities across site feasibility, use, entitlement, infrastructure, phasing, capital, dependencies, schedule, and development risk. | Determine preliminary site and development feasibility. |
+| @TROOPER_INDIA | ROLE_DERIVED_WORKING | Identify, analyze, acquire, and position land opportunities for profitable and strategically appropriate exits or development. | Identify, underwrite, acquire, position, and exit land opportunities using parcel, access, utility, zoning, demand, holding-cost, development, and disposition intelligence. | Validate parcel identity, ownership, access, utilities, zoning, and physical land characteristics. |
+| @TROOPER_KILO | ROLE_DERIVED_WORKING | Structure capital so approved opportunities have viable funding while controlling leverage, cost, repayment, and downside exposure. | Design viable capital structures for approved opportunities by evaluating debt, equity, leverage, cost of capital, coverage, repayment, covenants, funding gaps, and downside exposure. | Determine the complete capital requirement for an approved opportunity. |
+| @TROOPER_JULIET | ROLE_DERIVED_WORKING | Convert qualified funding opportunities into controlled, compliant application and award-management operations. | Convert qualified funding opportunities into controlled applications and post-award operations by managing requirements, eligibility evidence, submissions, compliance, and deadlines. | Translate an approved funding opportunity into a complete requirements and compliance matrix. |
+| @TROOPER_MIKE | ROLE_DERIVED_WORKING | Identify and control legal and compliance exposure while preserving appropriate authority boundaries and documentation. | Identify legal and compliance requirements, preserve governing evidence, flag exposure, control authority boundaries, and route matters requiring authorized legal action. | Identify the legal and compliance requirements affecting the proposed action. |
+| @TROOPER_LIMA | ROLE_DERIVED_WORKING | Preserve financial integrity through accurate accounting, reconciliation, controls, supporting records, and auditable financial information. | Maintain reliable financial records and controls through transaction classification, accounting, reconciliation, variance investigation, supporting evidence, and auditability. | Classify and reconcile financial transactions against supporting records. |
+| @ARCHITECT | ROLE_DERIVED_WORKING | Ensure Academy systems are deliberately designed as coherent components, interfaces, boundaries, dependencies, and controlled technical decisions. | Design and govern CARC and Academy system architecture by defining components, interfaces, boundaries, dependencies, tradeoffs, technical decisions, migration paths, and rollback considerations. | Convert approved requirements into a defined system architecture with explicit components, boundaries, and interfaces. |
+| @TROOPER_ROMEO | ROLE_DERIVED_WORKING | Convert approved technical requirements and architecture into tested, maintainable software implementations. | Convert approved architecture and technical requirements into tested, maintainable software while preserving implementation evidence, regression control, and deployment integrity. | Implement approved technical requirements according to the governing architecture. |
+| @TROOPER_QUEBEC | ROLE_DERIVED_WORKING | Preserve reliable, performant, and governed data through deliberate database architecture, integrity controls, and migrations. | Design and maintain reliable database structures, relationships, constraints, migrations, indexes, integrity controls, transactions, and rollback procedures. | Design and enforce the data schema, relationships, keys, and integrity constraints required by the system. |
+| @TROOPER_OSCAR | ROLE_DERIVED_WORKING | Convert repeatable operational processes into reliable, observable, recoverable automation. | Design, implement, observe, and recover governed automations across triggers, workflows, integrations, retries, exceptions, outputs, telemetry, and run evidence. | Convert an approved repeatable process into a governed automation workflow. |
+| @TROOPER_SIERRA | ROLE_DERIVED_WORKING | Protect Academy systems, identities, data, and operations by identifying, controlling, and validating security risks. | Identify, assess, control, test, and report security risks affecting Academy identities, applications, infrastructure, data, integrations, permissions, and operations. | Identify and assess material security threats and control gaps affecting the system. |
+| @TROOPER_PAPA | ROLE_DERIVED_WORKING | Convert governed data into reliable metrics, analysis, anomaly detection, intelligence, and decision support. | Transform governed data into validated metrics, analysis, trends, anomaly detection, forecasts, performance intelligence, and decision support. | Validate source data before calculating metrics or producing analysis. |
+| @TROOPER_NOVEMBER | ROLE_DERIVED_WORKING | Enable governed Web3 capabilities while preserving transaction integrity, permissions, security, and verifiable state. | Design and operate governed Web3 capabilities across wallets, networks, contracts, transactions, permissions, state, security, and verifiable execution. | Define and validate the governed Web3 transaction, wallet, network, and permission model. |
+| @TROOPER_WHISKEY | ROLE_DERIVED_WORKING | Protect and strengthen brand identity, positioning, differentiation, consistency, and intended market perception. | Define, protect, and strengthen brand positioning, identity, differentiation, consistency, standards, and intended market perception. | Define and protect the approved brand positioning and identity architecture. |
+| @TROOPER_VICTOR | ROLE_DERIVED_WORKING | Turn competitive market conditions into coordinated marketing maneuvers and measurable growth responses. | Translate competitive market intelligence into coordinated marketing responses, campaigns, channel maneuvers, positioning changes, and measurable growth actions. | Convert verified competitive-market intelligence into actionable marketing-response options. |
+| @TROOPER_UNIFORM | ROLE_DERIVED_WORKING | Ensure commerce systems convert customer demand into reliable transactions, fulfillment, and measurable revenue. | Design and improve commerce operations across offers, catalog, customer journey, checkout, payment, fulfillment, integrations, conversion, reliability, and revenue measurement. | Analyze the commerce funnel from offer through transaction and fulfillment. |
+| @NOVA | ROLE_DERIVED_WORKING | Translate strategic and brand objectives into coherent creative direction and distinctive visual concepts. | Translate approved strategy and brand objectives into coherent creative concepts, visual direction, experience principles, design rationale, and production guidance. | Translate approved strategy and brand requirements into a coherent creative concept and visual direction. |
+| @TROOPER_XRAY | ROLE_DERIVED_WORKING | Convert approved creative briefs into technically correct, quality-controlled, distribution-ready media assets. | Convert approved creative briefs into technically correct, quality-controlled, revision-managed, distribution-ready media deliverables. | Convert an approved creative brief into production-ready media assets. |
+| @TROOPER_TANGO | ROLE_DERIVED_WORKING | Ensure required resources, materials, movements, and deliveries reach their destinations predictably with operational evidence. | Coordinate required resources, routes, carriers, movements, schedules, constraints, exceptions, delivery confirmation, and logistics evidence for approved missions. | Define the complete logistics requirement, including origin, destination, resources, route, and schedule. |
+| @ORION | ROLE_DERIVED_WORKING | Discover emerging opportunities, signals, threats, and areas requiring deeper investigation before they become obvious. | Conduct structured reconnaissance for emerging opportunities, threats, market signals, strategic openings, and conditions requiring deeper investigation. | Scan approved information environments for emerging opportunities, threats, anomalies, and strategic signals. |
+| @TROOPER_ZULU | ROLE_DERIVED_WORKING | Reduce uncertainty through disciplined research, authoritative sourcing, evidence reconciliation, and defensible findings. | Conduct disciplined research using authoritative sources, evidence reconciliation, contradiction analysis, confidence assessment, and defensible findings. | Define the research question and identify authoritative sources required to answer it. |
+| @TROOPER_PHOENIX | ROLE_DERIVED_WORKING | Convert uncertainty, failure, and emerging possibilities into controlled experiments, innovation, resilience, and reusable learning. | Design controlled experiments and prototypes that convert emerging opportunities, operational failures, and uncertainty into validated innovation, resilience, and reusable learning. | Convert an identified innovation or resilience problem into a bounded, testable hypothesis. |
 
 ## Architecture notes
 

@@ -41,7 +41,10 @@
         TOGGLE_AUTO_MODE: 'NORMAL',
         EXPORT_PARTICIPANTS_CSV: 'NORMAL',
         EXPORT_DATA: 'NORMAL',
-        BROADCAST: 'ROSTER_WIDE'
+        BROADCAST: 'ROSTER_WIDE',
+        CREATE_TASK: 'NORMAL',
+        TASK_TRANSITION: 'NORMAL',
+        CREATE_HANDOFF: 'CROSS_DOMAIN'
     };
 
     function classifyCommandRisk(commandName) {
@@ -191,6 +194,54 @@
             return 'Full JSON backup export started — check your downloads.';
         }
 
+        var assignMatch = query.match(/^assign\s+task\s+(.+?)\s+to\s+@([A-Za-z0-9_]+)(?:\s*:\s*(.+))?$/i);
+        if (assignMatch) {
+            var owner = null;
+            try { owner = resolveCanonicalIdentity(assignMatch[2], DATA.participants); } catch (e) { owner = null; }
+            if (!owner) return 'No canonical target resolved for "@' + assignMatch[2] + '". Address a valid @CALLSIGN.';
+            var task = createTask({ title: assignMatch[1].trim(), description: (assignMatch[3] || '').trim(), ownerServiceMemberId: owner.serviceMemberId });
+            addLog('Task "' + task.title + '" assigned to ' + owner.callsign + ' via Agent Chat', 'info', { correlationId: canaryId('CMD'), risk: classifyCommandRisk('CREATE_TASK'), contentHash: fnv1aHash(query) });
+            saveData(); renderTasksGrid();
+            return 'Task "' + task.title + '" (' + task.taskId + ') assigned to ' + owner.callsign + '.';
+        }
+
+        var ackMatch = query.match(/\backnowledge\s+task\s+(TASK-[A-Z0-9-]+)\b/i);
+        var completeMatch = query.match(/\bcomplete\s+task\s+(TASK-[A-Z0-9-]+)\b/i);
+        if (ackMatch || completeMatch) {
+            var taskMatch = ackMatch || completeMatch;
+            var newTaskState = ackMatch ? 'ACKNOWLEDGED' : 'COMPLETED';
+            var actor = findChatTarget(query, explicitTarget);
+            var targetTask = DATA.tasks.find(function (t) { return t.taskId === taskMatch[1]; });
+            if (!targetTask) return 'No task found with ID ' + taskMatch[1] + '.';
+            if (!actor || actor.serviceMemberId !== targetTask.ownerServiceMemberId) return 'Only the task owner can ' + newTaskState.toLowerCase() + ' this task. Address the owning @CALLSIGN.';
+            var taskResult = transitionTask(targetTask.taskId, newTaskState);
+            if (!taskResult.ok) return 'Cannot move task ' + targetTask.taskId + ' from ' + taskResult.from + ' to ' + taskResult.to + '.';
+            addLog('Task ' + targetTask.taskId + ' → ' + newTaskState + ' via Agent Chat', 'info', { correlationId: canaryId('CMD'), risk: classifyCommandRisk('TASK_TRANSITION'), contentHash: fnv1aHash(query) });
+            saveData(); renderTasksGrid();
+            return 'Task ' + targetTask.taskId + ' → ' + newTaskState + '.';
+        }
+
+        var handoffMatch = query.match(/^hand\s*off\s+task\s+(TASK-[A-Z0-9-]+)\s+to\s+@([A-Za-z0-9_]+)$/i);
+        if (handoffMatch) {
+            var toP = null;
+            try { toP = resolveCanonicalIdentity(handoffMatch[2], DATA.participants); } catch (e) { toP = null; }
+            var srcTask = DATA.tasks.find(function (t) { return t.taskId === handoffMatch[1]; });
+            if (!srcTask) return 'No task found with ID ' + handoffMatch[1] + '.';
+            if (!toP) return 'No canonical target resolved for "@' + handoffMatch[2] + '".';
+            var handoffRisk = classifyCommandRisk('CREATE_HANDOFF');
+            if (requiresApproval(handoffRisk)) {
+                var handoffConfirmed = confirm('Hand off task ' + srcTask.taskId + ' from current owner to ' + toP.callsign + '?');
+                if (!handoffConfirmed) {
+                    addLog('Handoff declined at approval gate — command not executed', 'warning', { correlationId: canaryId('CMD'), risk: handoffRisk, contentHash: fnv1aHash(query) });
+                    return 'Handoff cancelled — approval was not confirmed.';
+                }
+            }
+            var handoff = createHandoff({ taskId: srcTask.taskId, fromServiceMemberId: srcTask.ownerServiceMemberId, toServiceMemberId: toP.serviceMemberId });
+            addLog('Handoff ' + handoff.handoffId + ' created: task ' + srcTask.taskId + ' → ' + toP.callsign + ' via Agent Chat', 'info', { correlationId: canaryId('CMD'), risk: handoffRisk, contentHash: fnv1aHash(query) });
+            saveData(); renderHandoffsGrid();
+            return 'Handoff ' + handoff.handoffId + ' created — awaiting ' + toP.callsign + ' acknowledgement.';
+        }
+
         return null;
     }
     // startRollCall() silently no-ops (just a toast) when a roll call is already running, so
@@ -237,7 +288,7 @@
             var recent = DATA.conversations.slice(0, 3).map(function (c) { return c.title; }).join(', ');
             return 'There are ' + DATA.conversations.length + ' conversations. Most recent: ' + recent + '.';
         }
-        if (/help|what can you do/.test(q)) return 'Agent Chat routes by @CALLSIGN or target selector — address multiple members at once with multiple @mentions. Ask any member for status, role, purpose, mission, duties, tasks, outputs, or identity. Choose ALL or say "everyone" for a persisted roster broadcast — an unaddressed message broadcasts to ALL by default. Commands: "@CALLSIGN mark present/absent", "create conversation: <title>", "set alert threshold to N", "pause/resume auto mode", "export data", "export participants". Local responses are NOT_RUNTIME_VERIFIED.';
+        if (/help|what can you do/.test(q)) return 'Agent Chat routes by @CALLSIGN or target selector — address multiple members at once with multiple @mentions. Ask any member for status, role, purpose, mission, duties, tasks, outputs, or identity. Choose ALL or say "everyone" for a persisted roster broadcast — an unaddressed message broadcasts to ALL by default. Commands: "@CALLSIGN mark present/absent", "create conversation: <title>", "set alert threshold to N", "pause/resume auto mode", "export data", "export participants", "assign task <title> to @X", "acknowledge/complete task <id>", "hand off task <id> to @X". Local responses are NOT_RUNTIME_VERIFIED.';
         // No @CALLSIGN, no recognized keyword, and no explicit target — default to a broadcast
         // rather than erroring, so a plain unaddressed message still does something useful.
         return attemptBroadcast(query, 'No @CALLSIGN or ALL specified — broadcasting to all active canonical identities by default. Responses were persisted to the roll-call transcript and are LOCAL_RULE_ENGINE · NOT_RUNTIME_VERIFIED. Address @CALLSIGN to target one member, or type "help" for other commands.');

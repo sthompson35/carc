@@ -32,6 +32,8 @@
                 { id: 'rc3', date: daysAgo(5), conv: 'Roll Call #1', present: 11, total: 12, rate: 91.7, status: 'completed' },
                 { id: 'rc4', date: daysAgo(7), conv: 'Roll Call #0', present: 9, total: 12, rate: 75.0, status: 'completed' }
             ],
+            tasks: [],
+            handoffs: [],
             activityLog: [
                 { time: nowTime(), at: new Date().toISOString(), event: 'Dashboard initialized', status: 'info' },
                 { time: nowTime(), at: new Date().toISOString(), event: 'Alpha joined conversation', status: 'success' },

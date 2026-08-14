@@ -8,11 +8,12 @@ module.exports = {
         'persona/mission-doctrine.js',
         'persona/identity.js',
         'persona/alias-registry.js',
+        'communication/tasks.js',
         'communication/chat-router.js'
     ],
     run: function (ctx, assert) {
         var participants = ctx.ROSTER.map(function (r, idx) { return ctx.rosterToParticipant(r, idx); });
-        ctx.DATA = { participants: participants, agent: { state: 'idle', chatLog: [] } };
+        ctx.DATA = { participants: participants, agent: { state: 'idle', chatLog: [] }, tasks: [], handoffs: [] };
 
         var isGroupBroadcastMessage = ctx.isGroupBroadcastMessage;
         var findChatTarget = ctx.findChatTarget;
@@ -109,5 +110,35 @@ module.exports = {
         var declineLog = addLogCalls[addLogCalls.length - 1];
         assert(declineLog.status === 'warning', 'the decline log entry has warning status');
         assert(declineLog.meta && declineLog.meta.correlationId && declineLog.meta.correlationId.indexOf('CMD-') === 0, 'the decline log entry carries a CMD- correlation id');
+
+        // ---- Task/Handoff commands ----
+        var tryAgentCommand = ctx.tryAgentCommand;
+        ctx.saveData = function () {};
+
+        assert(classifyCommandRisk('CREATE_HANDOFF') === 'CROSS_DOMAIN', 'CREATE_HANDOFF classifies as CROSS_DOMAIN');
+        assert(requiresApproval('CROSS_DOMAIN') === true, 'CROSS_DOMAIN requires approval');
+
+        var assignReply = tryAgentCommand('assign task Fix the widget to @VEX', 'AUTO');
+        assert(typeof assignReply === 'string' && /TASK-/.test(assignReply), 'assign task command creates a task and returns a taskId-bearing confirmation');
+        assert(ctx.DATA.tasks.length === 1 && ctx.DATA.tasks[0].ownerServiceMemberId === vex.serviceMemberId, 'assign task command creates a task owned by the resolved target');
+        var newTaskId = ctx.DATA.tasks[0].taskId;
+
+        var ackByNonOwner = tryAgentCommand('acknowledge task ' + newTaskId, mape.serviceMemberId);
+        assert(/Only the task owner/i.test(ackByNonOwner), 'acknowledging a task addressed as a non-owner is rejected');
+        assert(ctx.DATA.tasks[0].state === 'ASSIGNED', 'a rejected acknowledge command does not mutate task state');
+
+        var ackByOwner = tryAgentCommand('acknowledge task ' + newTaskId, vex.serviceMemberId);
+        assert(/ACKNOWLEDGED/.test(ackByOwner), 'acknowledging a task addressed as the real owner succeeds');
+        assert(ctx.DATA.tasks[0].state === 'ACKNOWLEDGED', 'the task state is mutated after a successful owner-addressed acknowledge');
+
+        confirmReturnValue = false;
+        var handoffDeclined = tryAgentCommand('hand off task ' + newTaskId + ' to @MAPE', 'AUTO');
+        assert(/cancelled/i.test(handoffDeclined), 'declining the handoff confirm() gate returns a cancellation message');
+        assert(ctx.DATA.handoffs.length === 0, 'declining the handoff confirm() gate does not create a handoff');
+
+        confirmReturnValue = true;
+        var handoffAccepted = tryAgentCommand('hand off task ' + newTaskId + ' to @MAPE', 'AUTO');
+        assert(/HANDOFF-/.test(handoffAccepted), 'accepting the handoff confirm() gate creates a handoff and returns its ID');
+        assert(ctx.DATA.handoffs.length === 1 && ctx.DATA.handoffs[0].toServiceMemberId === mape.serviceMemberId, 'the created handoff targets the resolved recipient');
     }
 };

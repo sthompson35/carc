@@ -299,6 +299,8 @@
         renderAdminTypeRegistry();
         renderAdminDataSummary();
         renderAdminLogGrid();
+        renderTasksGrid();
+        renderHandoffsGrid();
         renderAdminRuntimePanel();
         var themeToggle = document.getElementById('admThemeToggle');
         if (themeToggle) themeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -403,6 +405,7 @@
 
         document.getElementById('adminLogSearchInput').addEventListener('input', debounce(function (e) { adminLogState.search = e.target.value; adminLogState.page = 1; renderAdminLogGrid(); }, 200));
         document.getElementById('adminLogStatusFilter').addEventListener('change', function (e) { adminLogState.status = e.target.value; adminLogState.page = 1; renderAdminLogGrid(); });
+        wireTasksHandoffsPanel();
         $all('th.sortable', document.getElementById('page-admin')).forEach(function (th) {
             th.setAttribute('tabindex', '0');
             th.setAttribute('role', 'button');

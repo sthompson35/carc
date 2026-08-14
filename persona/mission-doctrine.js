@@ -51,6 +51,24 @@
     };
 
 
+    // Additive sibling data, never a replacement — purpose/mission/duties/tasks/outputs stay
+    // plain strings/arrays exactly as before, so every existing reader (participants.js,
+    // wiring.js CSV export, chat-persona.js, roll-call.js, runtime-sync.js) needs zero changes.
+    // Mirrors how authorityProfile (schema 18) sits alongside missionProfile.authority instead
+    // of replacing it.
+    var MISSION_PROFILE_PROVENANCE_FIELDS = ['purpose', 'mission', 'duties', 'tasks', 'outputs'];
+    var ROLE_DERIVED_MISSION_TEMPLATE_VERSION = 'ROLE_DERIVED_TEMPLATE_V1';
+
+    function buildFieldProvenance(authority, serviceMemberId) {
+        var entry = authority === 'CONVERSATION_CONFIRMED'
+            ? { authority:'CONVERSATION_CONFIRMED', sourceRecordId:serviceMemberId || '', sourceVersion:'CONFIRMED_MISSION_PROFILES', confidence:'CONFIRMED', establishedAt:'', establishedBy:'', lastReviewedAt:'' }
+            : { authority:'ROLE_DERIVED_WORKING', sourceRecordId:'', sourceVersion:ROLE_DERIVED_MISSION_TEMPLATE_VERSION, confidence:'TEMPLATE_DERIVED', establishedAt:'', establishedBy:'ROLE_DERIVED_TEMPLATE_ENGINE', lastReviewedAt:'' };
+        var out = {};
+        MISSION_PROFILE_PROVENANCE_FIELDS.forEach(function (f) { out[f] = Object.assign({}, entry); });
+        return out;
+    }
+
+
     function roleDerivedMissionProfile(r) {
         var role = r.role || 'Controlled Service Member';
         var command = r.command || 'Academy Operations';
@@ -99,7 +117,11 @@
             outputs:p.outputs.slice(),
             operatingDoctrine:Object.assign({}, UNIVERSAL_OPERATING_DOCTRINE),
             productionRule:'MISSION_READY does not equal PRODUCTION_VERIFIED. Runtime claims require governed source access, enforced permissions, controlled workflow, telemetry, audit evidence, and independent verification.',
-            profileStatus:p.authority === 'CONVERSATION_CONFIRMED' ? 'CONFIRMED' : 'WORKING_PROFILE_REVIEW_REQUIRED'
+            profileStatus:p.authority === 'CONVERSATION_CONFIRMED' ? 'CONFIRMED' : 'WORKING_PROFILE_REVIEW_REQUIRED',
+            // No schema bump needed for this field: schemas/migrate.js's unconditional canonical
+            // merge (~line 70-82) overwrites missionProfile from this exact function on every
+            // load, so new sub-fields here backfill onto all 66 participants automatically.
+            fieldProvenance: buildFieldProvenance(p.authority, r.serviceMemberId)
         };
     }
 

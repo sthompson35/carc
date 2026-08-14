@@ -125,6 +125,22 @@ export default async function run(page) {
             await page.locator('#rvClose').click({ timeout: 5000 }).catch(() => {});
             await page.waitForTimeout(200);
         }
+
+        // Field Provenance: additive, read-only, computed — reopen the participant modal since
+        // closeModal() clears the whole body (same reason the ap-view/rv-view checks above do).
+        await page.locator('button[data-act="view"]').first().click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const fpViewBtn = page.locator('.fp-view').first();
+        if (await fpViewBtn.count()) {
+            const fpBadges = page.locator('#modalBody .badge').filter({ hasText: /CONFIRMED|TEMPLATE_DERIVED/ });
+            check((await fpBadges.count()) === 5, 'participant detail modal renders exactly 5 field-provenance badges (purpose/mission/duties/tasks/outputs)');
+            await fpViewBtn.click({ timeout: 5000 });
+            await page.waitForTimeout(300);
+            check((await page.locator('#modalBody input:not([disabled]), #modalBody textarea, #modalBody select').count()) === 0, 'Field Provenance modal has no editable fields (computed, not self-attestable)');
+            check((await page.locator('#modalBody').innerText()).includes('sourceRecordId') === false, 'Field Provenance modal renders human labels, not raw field names');
+            await page.locator('#fpClose').click({ timeout: 5000 }).catch(() => {});
+            await page.waitForTimeout(200);
+        }
     }
 
     // Agent Chat: targeted + multi-target messages, search
@@ -241,6 +257,47 @@ export default async function run(page) {
         const notFoundText = await page.locator('#toolIdLookupResult').innerText().catch(() => '');
         check(/No match found/.test(notFoundText), 'Tool ID Lookup still reports no-match for a garbage query');
     }
+
+    // Task + Handoff Ledger: create a task, drive it through its real transitions, confirm
+    // illegal-transition buttons are absent at each stage.
+    {
+        // Note: an empty grid still renders one placeholder <tr> ("No tasks match"), so a raw
+        // row-count diff of exactly +1 isn't reliable across a fresh vs. non-fresh dataset —
+        // check for the created task's title appearing in the grid instead.
+        await page.locator('#btnNewTask').click({ timeout: 5000 });
+        await page.waitForTimeout(300);
+        await page.locator('#ntTitle').fill('e2e regression task');
+        await page.locator('#ntSave').click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        check((await page.locator('#taskGridBody').innerText()).includes('e2e regression task'), 'creating a task via + New Task shows it in the Tasks grid');
+
+        await page.locator('#taskGridBody tr').first().click({ timeout: 5000 });
+        await page.waitForTimeout(300);
+        const transitionButtons1 = await page.locator('.task-transition').allInnerTexts();
+        check(transitionButtons1.some((t) => /ACKNOWLEDGED/.test(t)) && !transitionButtons1.some((t) => /COMPLETED/.test(t)), 'a freshly-ASSIGNED task only offers ACKNOWLEDGED/CANCELLED transitions, never COMPLETED');
+
+        await page.locator('.task-transition', { hasText: 'ACKNOWLEDGED' }).click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const transitionButtons2 = await page.locator('.task-transition').allInnerTexts();
+        check(transitionButtons2.some((t) => /IN_PROGRESS/.test(t)) && !transitionButtons2.some((t) => /COMPLETED/.test(t)), 'an ACKNOWLEDGED task offers IN_PROGRESS next, still not COMPLETED (cannot be skipped)');
+
+        await page.locator('.task-transition', { hasText: 'IN_PROGRESS' }).click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const transitionButtons3 = await page.locator('.task-transition').allInnerTexts();
+        check(transitionButtons3.some((t) => /COMPLETED/.test(t)), 'an IN_PROGRESS task finally offers COMPLETED');
+
+        await page.locator('.task-transition', { hasText: 'COMPLETED' }).click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const terminalText = await page.locator('#modalBody').innerText();
+        check(/no further transitions/i.test(terminalText), 'a COMPLETED task shows no transition buttons (terminal state)');
+        await page.locator('#tdClose').click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(200);
+    }
+
+    // Footer/console release string: was a hardcoded stale "v3.22.0" separate from the
+    // Governance page's already-dynamic #govReleaseBadge — now derived the same way.
+    const footerReleaseText = await page.locator('#footerRelease').innerText().catch(() => '');
+    check(/^v\d+\.\d+\.\d+$/.test(footerReleaseText), 'footer release string is a real derived version, not a stale hardcoded one (' + footerReleaseText + ')');
 
     console.log('\n  captured page console/errors during this run (' + pageEvents.length + '):');
     pageEvents.forEach((e) => console.log('    ' + e));

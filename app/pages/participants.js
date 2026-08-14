@@ -229,6 +229,12 @@
             (p.missionProfile ? '<div class="mt-2"><strong class="text-sm">Mission Doctrine</strong>' +
                 '<div class="kv-row"><span>Profile Authority</span><span>' + esc(p.missionProfile.authority) + '</span></div>' +
                 '<div class="kv-row"><span>Profile Status</span><span>' + esc(p.missionProfile.profileStatus) + '</span></div>' +
+                (p.missionProfile.fieldProvenance ? '<div class="mt-1"><b>Field Provenance</b> <button class="btn btn-outline btn-sm fp-view" data-pid="' + esc(p.id) + '">View</button>' +
+                    '<div class="mt-1">' + MISSION_PROFILE_PROVENANCE_FIELDS.map(function (f) {
+                        var fp = p.missionProfile.fieldProvenance[f];
+                        if (!fp) return '';
+                        return '<span class="badge ' + (fp.authority === 'CONVERSATION_CONFIRMED' ? 'badge-active' : 'badge-inactive') + '" style="margin-right:4px;">' + esc(f) + ': ' + esc(fp.confidence) + '</span>';
+                    }).join('') + '</div></div>' : '') +
                 '<div class="mt-1"><b>Purpose</b><div class="text-sm text-muted">' + esc(p.missionProfile.purpose) + '</div></div>' +
                 '<div class="mt-1"><b>Mission</b><div class="text-sm text-muted">' + esc(p.missionProfile.mission) + '</div></div>' +
                 '<div class="mt-1"><b>Duties</b><ul style="padding-left:18px;margin-top:4px;">' + p.missionProfile.duties.map(function(x){return '<li class="text-sm">'+esc(x)+'</li>';}).join('') + '</ul></div>' +
@@ -290,6 +296,31 @@
         $all('.rv-view').forEach(function (btn) {
             btn.addEventListener('click', function () { openRuntimeVerificationModal(btn.getAttribute('data-pid')); });
         });
+        $all('.fp-view').forEach(function (btn) {
+            btn.addEventListener('click', function () { openFieldProvenanceModal(btn.getAttribute('data-pid')); });
+        });
+    }
+
+    function openFieldProvenanceModal(participantId) {
+        var p = DATA.participants.find(function (x) { return x.id === participantId; });
+        if (!p || !p.missionProfile || !p.missionProfile.fieldProvenance) return;
+        var fp = p.missionProfile.fieldProvenance;
+        var body = '<p class="text-sm">This is <b>computed</b> at profile-build time — it cannot be self-attested. It reflects where each mission-profile field\'s content actually came from.</p>' +
+            MISSION_PROFILE_PROVENANCE_FIELDS.map(function (f) {
+                var e = fp[f];
+                return '<div class="mt-2"><b class="text-sm">' + esc(f) + '</b>' +
+                    '<div class="kv-row"><span>Authority</span><span class="badge ' + (e.authority === 'CONVERSATION_CONFIRMED' ? 'badge-active' : 'badge-inactive') + '">' + esc(e.authority) + '</span></div>' +
+                    '<div class="kv-row"><span>Confidence</span><span>' + esc(e.confidence) + '</span></div>' +
+                    '<div class="kv-row"><span>Source Record ID</span><code class="text-xs">' + esc(e.sourceRecordId || '—') + '</code></div>' +
+                    '<div class="kv-row"><span>Source Version</span><span class="text-xs">' + esc(e.sourceVersion || '—') + '</span></div>' +
+                    '<div class="kv-row"><span>Established At</span><span class="text-xs">' + esc(e.establishedAt || 'NOT RECORDED') + '</span></div>' +
+                    '<div class="kv-row"><span>Established By</span><span class="text-xs">' + esc(e.establishedBy || 'NOT RECORDED') + '</span></div>' +
+                    '<div class="kv-row"><span>Last Reviewed At</span><span class="text-xs">' + esc(e.lastReviewedAt || 'NOT RECORDED') + '</span></div>' +
+                    '</div>';
+            }).join('') +
+            '<p class="text-xs text-muted mt-2">To change this: nothing to record here yet — CARC has no per-field evidence/review workflow. This is real infrastructure with no fabricated content, ready for the moment a field needs individual provenance.</p>';
+        openModal('Field Provenance — ' + p.name, body, '<button class="btn btn-outline" id="fpClose">Close</button>');
+        document.getElementById('fpClose').addEventListener('click', closeModal);
     }
 
     function openKnowledgePathEvidenceModal(participantId, stageId) {

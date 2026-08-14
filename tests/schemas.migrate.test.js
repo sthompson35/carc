@@ -21,8 +21,14 @@ module.exports = {
         var migrateData = ctx.migrateData;
 
         var d = migrateData({});
-        assert(d.schemaVersion === 19, 'migrateData sets schemaVersion to 19 (got ' + d.schemaVersion + ')');
+        assert(d.schemaVersion === 20, 'migrateData sets schemaVersion to 20 (got ' + d.schemaVersion + ')');
         assert(Array.isArray(d.participants) && d.participants.length === 66, 'migrateData populates all 66 canonical participants from ROSTER');
+
+        assert(Array.isArray(d.tasks) && d.tasks.length === 0, 'migrateData backfills an empty tasks[] array for a fresh install');
+        assert(Array.isArray(d.handoffs) && d.handoffs.length === 0, 'migrateData backfills an empty handoffs[] array for a fresh install');
+
+        var MISSION_FIELDS = ['purpose', 'mission', 'duties', 'tasks', 'outputs'];
+        assert(d.participants.every(function (p) { return p.missionProfile.fieldProvenance && MISSION_FIELDS.every(function (f) { return !!p.missionProfile.fieldProvenance[f]; }); }), 'every participant gets a 5-field missionProfile.fieldProvenance via the existing unconditional canonical merge — no schema bump needed for this specific field');
 
         assert(d.participants.every(function (p) { return Array.isArray(p.aliases) && p.aliases.length === 0; }), 'a fresh migration leaves aliases[] empty for all 66 identities — no fabricated alias data');
         assert(d.participants.every(function (p) { return Array.isArray(p.legacyIds) && p.legacyIds.length === 1 && p.legacyIds[0].value === p.legacyAlias; }), 'a fresh migration seeds exactly one real legacyIds[] entry from the existing legacyAlias value');

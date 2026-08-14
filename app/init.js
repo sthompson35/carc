@@ -1,7 +1,13 @@
 'use strict';
 // app/init.js
 
+    function renderReleaseStrings() {
+        var el = document.getElementById('footerRelease');
+        if (el) el.textContent = (String(DATA.governance.release || '').match(/v[\d.]+/) || ['—'])[0];
+    }
+
     function renderAll() {
+        renderReleaseStrings();
         renderStats();
         renderParticipantsPreview();
         renderConversationsPreview();
@@ -55,7 +61,7 @@
         setInterval(updateStatusDot, 10000);
         window.addEventListener('hashchange', function () { navigate(location.hash.slice(1)); });
 
-        console.log('%c🏛️ CARC Dashboard v3.22.0', 'font-size:20px; font-weight:bold; color:#667eea;');
+        console.log('%c🏛️ CARC Dashboard ' + (String(DATA.governance.release || '').match(/v[\d.]+/) || ['—'])[0], 'font-size:20px; font-weight:bold; color:#667eea;');
         console.log('%c' + DATA.conversations.length + ' Conversations · ' + DATA.participants.length + ' Participants · ' + DATA.totalMessages + ' Messages', 'font-size:12px; color:#6b7280;');
         console.log('%c💡 Shortcuts: Ctrl+R Refresh · Ctrl+E Export · Ctrl+I Import · Ctrl+N New Conv · Ctrl+K Search', 'font-size:12px; color:#6b7280;');
     }

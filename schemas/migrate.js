@@ -54,6 +54,8 @@
         if (!Array.isArray(d.conversations)) d.conversations = [];
         if (!Array.isArray(d.rollCalls)) d.rollCalls = [];
         if (!Array.isArray(d.activityLog)) d.activityLog = [];
+        if (!Array.isArray(d.tasks)) d.tasks = [];
+        if (!Array.isArray(d.handoffs)) d.handoffs = [];
 
         // v3.7 conversation reconciliation: retire the synthetic municipal/demo conversation set
         // and seed the CARC/AI Training Academy message index from the conversation-backed baseline.
@@ -356,6 +358,17 @@
                 text:'CARC v3.25.0 added a governed alias/legacy-identifier registry: every controlled identity now carries aliases[] and legacyIds[], non-destructively seeded from the existing legacyAlias field, resolved through a single-precedence identity resolver (canonical ID > canonical callsign > legacy ID > active verified alias) that never inspects readiness or execution status, and audited for missing/mismatched targets, alias chains, collisions, and unverified activations. Wired into Agent Chat targeting, the Runtime Canary target lookup, and the Admin Tool ID Lookup.'
             });
         }
-        d.schemaVersion = 19;
+        if ((d.schemaVersion || 0) < 20) {
+            // d.tasks/d.handoffs are already guarded non-destructively at the top of this
+            // function — nothing to backfill here beyond the release marker and ledger entry.
+            d.governance.release = 'CARC v3.26.0 — Task & Handoff Ledger';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({
+                time:new Date().toISOString(),
+                type:'architecture',
+                text:'CARC v3.26.0 added a governed task and handoff ledger: DATA.tasks[] (ASSIGNED → ACKNOWLEDGED → IN_PROGRESS → COMPLETED, or CANCELLED) and DATA.handoffs[] (CREATED → ACKNOWLEDGED → ACCEPTED → COMPLETED, or DECLINED) — every transition is a declared actor state flip CARC can log and enforce today; no fabricated verification-pipeline states.'
+            });
+        }
+        d.schemaVersion = 20;
         return d;
     }

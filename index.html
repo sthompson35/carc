@@ -1144,12 +1144,62 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                     </div>
                     <div class="pagination" id="adminLogPagination"></div>
                 </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">🗂️ Tasks <span class="badge" id="taskGridCount">0 total</span></div>
+                        <div class="panel-actions"><button class="btn btn-outline btn-sm" id="btnNewTask">+ New Task</button></div>
+                    </div>
+                    <div class="grid-toolbar">
+                        <input type="text" id="taskSearchInput" placeholder="Search title or task ID…">
+                        <select id="taskStatusFilter">
+                            <option value="">All states</option>
+                            <option value="ASSIGNED">Assigned</option>
+                            <option value="ACKNOWLEDGED">Acknowledged</option>
+                            <option value="IN_PROGRESS">In Progress</option>
+                            <option value="COMPLETED">Completed</option>
+                            <option value="CANCELLED">Cancelled</option>
+                        </select>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Created</th><th>Title</th><th>Owner</th><th>State</th></tr></thead>
+                            <tbody id="taskGridBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="taskGridPagination"></div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">🤝 Handoffs <span class="badge" id="handoffGridCount">0 total</span></div>
+                        <div class="panel-actions"><button class="btn btn-outline btn-sm" id="btnNewHandoff">+ New Handoff</button></div>
+                    </div>
+                    <div class="grid-toolbar">
+                        <input type="text" id="handoffSearchInput" placeholder="Search participants or handoff ID…">
+                        <select id="handoffStatusFilter">
+                            <option value="">All states</option>
+                            <option value="CREATED">Created</option>
+                            <option value="ACKNOWLEDGED">Acknowledged</option>
+                            <option value="ACCEPTED">Accepted</option>
+                            <option value="COMPLETED">Completed</option>
+                            <option value="DECLINED">Declined</option>
+                        </select>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Created</th><th>From → To</th><th>Task</th><th>State</th></tr></thead>
+                            <tbody id="handoffGridBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="handoffGridPagination"></div>
+                </div>
             </section>
 
         </div>
 
         <footer class="footer">
-            Council Agent Roll Call (CARC) v3.22.0 · Idempotent canonical broadcast engine · Governed local control plane · Production claims require evidence
+            Council Agent Roll Call (CARC) <span id="footerRelease">v—</span> · Idempotent canonical broadcast engine · Governed local control plane · Production claims require evidence
         </footer>
     </div>
 </div>
@@ -1188,6 +1238,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
 <script src="app/grid.js"></script>
 <script src="app/charts.js"></script>
 <script src="communication/roll-call.js"></script>
+<script src="communication/tasks.js"></script>
 <script src="communication/chat-router.js"></script>
 <script src="communication/governance.js"></script>
 <script src="communication/runtime-sync.js"></script>
