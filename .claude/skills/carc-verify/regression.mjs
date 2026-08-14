@@ -53,7 +53,9 @@ export default async function run(page) {
     {
         await page.locator('button[data-act="view"]').first().click({ timeout: 5000 });
         await page.waitForTimeout(400);
-        const kpCards = page.locator('#modalBody .gate-item');
+        // Scoped via :has(.kp-evidence-edit) — the modal also renders an Identity Profiles
+        // .gate-grid using the same .gate-item class, so an unscoped count would be ambiguous.
+        const kpCards = page.locator('#modalBody .gate-item:has(.kp-evidence-edit)');
         check((await kpCards.count()) === 10, 'participant detail modal renders exactly 10 knowledge-path stage cards');
         const firstBadgeText = await kpCards.first().locator('.badge').innerText().catch(() => '');
         check(firstBadgeText === 'PENDING', 'a fresh participant\'s first knowledge-path stage starts PENDING');
@@ -72,10 +74,51 @@ export default async function run(page) {
         await page.locator('#kpVerifier').fill('e2e verifier');
         await page.locator('#kpSave').click({ timeout: 5000 });
         await page.waitForTimeout(400);
-        const reopenedBadge = await page.locator('#modalBody .gate-item').first().locator('.badge').innerText().catch(() => '');
+        const reopenedBadge = await page.locator('#modalBody .gate-item:has(.kp-evidence-edit)').first().locator('.badge').innerText().catch(() => '');
         check(reopenedBadge === 'VERIFIED', 'saved evidence+verifier flips the stage to VERIFIED and the reopened modal reflects it');
-        await page.locator('#pdClose').click({ timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(200);
+
+        // Identity Profiles: same evidence-gated flow, reusing the .gate-grid/.gate-item pattern
+        const ipCards = page.locator('#modalBody .gate-item:has(.ip-evidence-edit)');
+        check((await ipCards.count()) === 3, 'participant detail modal renders exactly 3 identity-profile cards (persona/communication/handoff)');
+        const ipFirstBadge = await ipCards.first().locator('.badge').innerText().catch(() => '');
+        check(ipFirstBadge === 'PENDING', 'a fresh participant\'s first identity profile starts PENDING');
+
+        await ipCards.first().locator('.ip-evidence-edit').click({ timeout: 5000 });
+        await page.waitForTimeout(300);
+        await page.locator('#ipStatus').selectOption('VERIFIED');
+        await page.locator('#ipSave').click({ timeout: 5000 });
+        await page.waitForTimeout(300);
+        check((await page.locator('#ipSave').count()) > 0, 'saving an identity profile as VERIFIED with empty evidence/verifier is rejected (modal stays open)');
+
+        await page.locator('#ipEvidence').fill('e2e identity profile evidence');
+        await page.locator('#ipVerifier').fill('e2e verifier');
+        await page.locator('#ipSave').click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const ipReopenedBadge = await page.locator('#modalBody .gate-item:has(.ip-evidence-edit)').first().locator('.badge').innerText().catch(() => '');
+        check(ipReopenedBadge === 'VERIFIED', 'saved identity-profile evidence+verifier flips it to VERIFIED and the reopened modal reflects it');
+
+        // Authority Profile / Runtime Verification: computed, read-only — no editable fields.
+        // closeModal() clears the whole modal body (not just the sub-view), so the participant
+        // detail modal has to be reopened between these two checks, not just closed once.
+        const apViewBtn = page.locator('.ap-view').first();
+        if (await apViewBtn.count()) {
+            await apViewBtn.click({ timeout: 5000 });
+            await page.waitForTimeout(300);
+            check((await page.locator('#modalBody input:not([disabled]), #modalBody textarea, #modalBody select').count()) === 0, 'Authority Profile modal has no editable fields (computed, not self-attestable)');
+            await page.locator('#apClose').click({ timeout: 5000 }).catch(() => {});
+            await page.waitForTimeout(200);
+        }
+
+        await page.locator('button[data-act="view"]').first().click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const rvViewBtn = page.locator('.rv-view').first();
+        if (await rvViewBtn.count()) {
+            await rvViewBtn.click({ timeout: 5000 });
+            await page.waitForTimeout(300);
+            check((await page.locator('#modalBody input:not([disabled]), #modalBody textarea, #modalBody select').count()) === 0, 'Runtime Verification modal has no editable fields (computed, not self-attestable)');
+            await page.locator('#rvClose').click({ timeout: 5000 }).catch(() => {});
+            await page.waitForTimeout(200);
+        }
     }
 
     // Agent Chat: targeted + multi-target messages, search

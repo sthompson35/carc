@@ -56,6 +56,7 @@
             targetServiceMemberId:targetId, startedAt:started, result:result,
             runtimeVerified:false, independentVerification:'PENDING'
         }].concat(rc.executions || []).slice(0,50);
+        if (p) p.runtimeVerification = evaluateRuntimeVerification(p);
 
         addGovernanceLedger('canary', (p ? p.callsign : targetId) + ' canary → ' + result + ' · ' + executionId + ' · NOT_RUNTIME_VERIFIED');
         saveData();

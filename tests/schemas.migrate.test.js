@@ -8,7 +8,9 @@ module.exports = {
         'app/util.js',
         'data/roster.js',
         'persona/mission-doctrine.js',
+        'persona/identity.js',
         'persona/knowledge-path.js',
+        'persona/identity-profiles.js',
         'schemas/migrate.js',
         'data/seed.js',
         'communication/chat-router.js',
@@ -18,11 +20,16 @@ module.exports = {
         var migrateData = ctx.migrateData;
 
         var d = migrateData({});
-        assert(d.schemaVersion === 17, 'migrateData sets schemaVersion to 17 (got ' + d.schemaVersion + ')');
+        assert(d.schemaVersion === 18, 'migrateData sets schemaVersion to 18 (got ' + d.schemaVersion + ')');
         assert(Array.isArray(d.participants) && d.participants.length === 66, 'migrateData populates all 66 canonical participants from ROSTER');
 
         assert(d.participants.every(function (p) { return p.knowledgePath && p.knowledgePath.stages.length === 10; }), 'every canonical participant gets a 10-stage knowledge path');
         assert(d.participants.every(function (p) { return p.knowledgePath.stages.every(function (s) { return s.status === 'PENDING'; }); }), 'a fresh migration backfills every knowledge-path stage as empty/PENDING, never pre-filled');
+
+        var IDENTITY_PROFILE_KEYS = ['personaProfile', 'communicationProfile', 'handoffProfile'];
+        assert(d.participants.every(function (p) { return IDENTITY_PROFILE_KEYS.every(function (k) { return p[k] && p[k].status === 'PENDING' && p[k].evidence === '' && p[k].verifier === ''; }); }), 'a fresh migration backfills persona/communication/handoff profiles as empty/PENDING, never pre-filled');
+        assert(d.participants.every(function (p) { return p.authorityProfile && p.authorityProfile.gate.allowed === true; }), 'every clean, active canonical participant has an authorized authorityProfile');
+        assert(d.participants.every(function (p) { return p.runtimeVerification && p.runtimeVerification.verified === false; }), 'every canonical participant starts runtimeVerification.verified === false (no canary has run yet)');
 
         var allReady = d.participants.every(function (p) { return p.readiness === 'MISSION_READY'; });
         assert(allReady, 'every clean, active canonical participant is recomputed as MISSION_READY');
@@ -51,5 +58,25 @@ module.exports = {
         var kpD2 = migrateData(kpD);
         var reMigrated = kpD2.participants.find(function (p) { return p.serviceMemberId === kpTarget.serviceMemberId; });
         assert(reMigrated.knowledgePath.stages[0].status === 'VERIFIED', 're-running migration does not clobber already-recorded knowledge-path progress');
+
+        // authorityProfile/runtimeVerification must be freshly recomputed on every pass, never
+        // preserved — same isolated-run pattern as the knowledge-path check above.
+        var apD = migrateData({});
+        var apTarget = apD.participants[0];
+        apTarget.status = 'inactive';
+        apD.schemaVersion = 17;
+        var apD2 = migrateData(apD);
+        var apReMigrated = apD2.participants.find(function (p) { return p.serviceMemberId === apTarget.serviceMemberId; });
+        assert(apReMigrated.authorityProfile.gate.allowed === false && apReMigrated.authorityProfile.gate.reason === 'TARGET_INACTIVE', 'authorityProfile is freshly recomputed on re-migration, reflecting the now-inactive status');
+
+        // Identity profiles (persona/communication/handoff) must NOT be clobbered on re-migration —
+        // they carry real hand-attested evidence once used, unlike authorityProfile/runtimeVerification.
+        var ipD = migrateData({});
+        var ipTarget = ipD.participants[0];
+        ipTarget.personaProfile = { status: 'VERIFIED', evidence: 'real evidence', verifier: 'real verifier', updatedAt: new Date().toISOString() };
+        ipD.schemaVersion = 17;
+        var ipD2 = migrateData(ipD);
+        var ipReMigrated = ipD2.participants.find(function (p) { return p.serviceMemberId === ipTarget.serviceMemberId; });
+        assert(ipReMigrated.personaProfile.status === 'VERIFIED', 're-running migration does not clobber already-recorded persona profile progress');
     }
 };

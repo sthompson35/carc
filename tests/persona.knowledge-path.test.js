@@ -18,6 +18,12 @@ module.exports = {
         var ids = fresh.stages.map(function (s) { return s.id; });
         assert(ids.indexOf('mission_eligibility') === 8 && ids.indexOf('review_acknowledgement') === 9, 'mission_eligibility precedes review_acknowledgement in stage order');
 
+        // getPipelineProfile — pure alias, zero new stored state.
+        var getPipelineProfile = ctx.getPipelineProfile;
+        var withPath = { id: 'r-TEST-ALIAS', knowledgePath: fresh };
+        assert(getPipelineProfile(withPath) === withPath.knowledgePath, 'getPipelineProfile returns p.knowledgePath by reference, not a copy');
+        assert(getPipelineProfile({ id: 'r-TEST-NOPATH' }) === null, 'getPipelineProfile returns null for a participant with no knowledgePath');
+
         // evaluateKnowledgePathState on a fresh path
         var p = { id: 'r-TEST-1', knowledgePath: buildDefaultKnowledgePath() };
         var state0 = evaluateKnowledgePathState(p);

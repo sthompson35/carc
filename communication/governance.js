@@ -29,6 +29,8 @@
         DATA.participants.forEach(function (p) {
             if (!p.serviceMemberId) return;
             p.readiness = (gate.complete && hasVerifiedCanaryExecutionFor(p.serviceMemberId)) ? 'PRODUCTION_VERIFIED' : evaluateIndividualReadiness(p);
+            p.authorityProfile = evaluateAuthorityProfile(p);
+            p.runtimeVerification = evaluateRuntimeVerification(p);
         });
         return gate;
     }

@@ -195,6 +195,8 @@
                 (p.legacyAlias ? '<div class="kv-row"><span>Legacy Alias</span><span>' + esc(p.legacyAlias) + '</span></div>' : '') +
                 (p.canonicalStatus ? '<div class="kv-row"><span>Canonical Status</span><span>' + esc(p.canonicalStatus) + '</span></div>' : '') +
                 (p.readiness ? '<div class="kv-row"><span>Readiness</span><span>' + esc(p.readiness) + '</span></div>' : '') +
+                (p.authorityProfile ? '<div class="kv-row"><span>Authority Profile</span><span><span class="badge ' + (p.authorityProfile.gate.allowed ? 'badge-active' : 'badge-inactive') + '">' + esc(p.authorityProfile.gate.allowed ? 'AUTHORIZED' : 'NOT_AUTHORIZED') + '</span> <button class="btn btn-outline btn-sm ap-view" data-pid="' + esc(p.id) + '">View</button></span></div>' : '') +
+                (p.runtimeVerification ? '<div class="kv-row"><span>Runtime Verification</span><span><span class="badge ' + (p.runtimeVerification.verified ? 'badge-active' : 'badge-inactive') + '">' + esc(p.runtimeVerification.verified ? 'RUNTIME_VERIFIED' : 'NOT_RUNTIME_VERIFIED') + '</span> <button class="btn btn-outline btn-sm rv-view" data-pid="' + esc(p.id) + '">View</button></span></div>' : '') +
                 '</div>';
         }
         var body =
@@ -235,6 +237,19 @@
                             '<div class="mt-1"><button class="btn btn-outline btn-sm kp-evidence-edit" data-pid="' + esc(p.id) + '" data-sid="' + esc(s.id) + '">' + btnLabel + '</button></div></div>';
                     }).join('') + '</div></div>';
             })() : '') +
+            (function () {
+                var ipState = evaluateIdentityProfilesState(p);
+                return '<div class="mt-2"><strong class="text-sm">Identity Profiles (' + ipState.defined + '/' + ipState.total + ')</strong>' +
+                    '<div class="gate-grid mt-2">' + IDENTITY_PROFILE_DEFS.map(function (def) {
+                        var prof = p[def.key] || buildDefaultIdentityProfile();
+                        var cls = prof.status === 'VERIFIED' ? 'badge-active' : 'badge-inactive';
+                        var btnLabel = prof.status === 'VERIFIED' ? 'Review Evidence' : 'Record Evidence';
+                        return '<div class="gate-item"><div class="gate-head"><div class="gate-name">' + esc(def.name) + '</div><span class="badge ' + cls + '">' + esc(prof.status) + '</span></div>' +
+                            '<div class="gate-desc">' + esc(def.description) + '</div>' +
+                            '<div class="gate-meta">Evidence: ' + esc(prof.evidence || 'NOT RECORDED') + '<br>Verifier: ' + esc(prof.verifier || 'NOT RECORDED') + '</div>' +
+                            '<div class="mt-1"><button class="btn btn-outline btn-sm ip-evidence-edit" data-pid="' + esc(p.id) + '" data-key="' + esc(def.key) + '">' + btnLabel + '</button></div></div>';
+                    }).join('') + '</div></div>';
+            })() +
             '<div class="mt-2"><strong class="text-sm">Conversations (' + relatedConvs.length + ')</strong><div class="mt-1">' +
             (relatedConvs.length ? relatedConvs.map(function (c) { return '<span class="chip conv-detail-open" data-id="' + c.id + '" style="cursor:pointer;">' + esc(c.title) + '</span>'; }).join('') : '<span class="text-muted text-sm">No conversations yet</span>') +
             '</div></div>';
@@ -251,6 +266,15 @@
         });
         $all('.kp-evidence-edit').forEach(function (btn) {
             btn.addEventListener('click', function () { openKnowledgePathEvidenceModal(btn.getAttribute('data-pid'), btn.getAttribute('data-sid')); });
+        });
+        $all('.ip-evidence-edit').forEach(function (btn) {
+            btn.addEventListener('click', function () { openIdentityProfileEvidenceModal(btn.getAttribute('data-pid'), btn.getAttribute('data-key')); });
+        });
+        $all('.ap-view').forEach(function (btn) {
+            btn.addEventListener('click', function () { openAuthorityProfileModal(btn.getAttribute('data-pid')); });
+        });
+        $all('.rv-view').forEach(function (btn) {
+            btn.addEventListener('click', function () { openRuntimeVerificationModal(btn.getAttribute('data-pid')); });
         });
     }
 
@@ -292,6 +316,63 @@
             openParticipantDetail(participantId);
             showToast('success', '✅ Knowledge path evidence saved');
         });
+    }
+
+    function openIdentityProfileEvidenceModal(participantId, key) {
+        var p = DATA.participants.find(function (x) { return x.id === participantId; });
+        if (!p) return;
+        var def = IDENTITY_PROFILE_DEFS.find(function (d) { return d.key === key; });
+        if (!def) return;
+        var prof = p[key] || buildDefaultIdentityProfile();
+        var body = '<div class="form-group"><label>Profile</label><input value="' + esc(def.name) + '" disabled></div>' +
+            '<div class="form-group"><label>Evidence Reference</label><textarea id="ipEvidence" rows="4" placeholder="Source record, approval reference, definition document ID…">' + esc(prof.evidence || '') + '</textarea></div>' +
+            '<div class="form-group"><label>Verifier</label><input id="ipVerifier" value="' + esc(prof.verifier || '') + '" placeholder="e.g. supervisor, reviewer ID"></div>' +
+            '<div class="form-group"><label>Status</label><select id="ipStatus"><option value="PENDING">PENDING</option><option value="VERIFIED">VERIFIED</option></select></div>' +
+            '<div class="text-xs text-muted">VERIFIED requires both an evidence reference and a verifier. CARC will not accept a bare status flip.</div>';
+        var footer = '<button class="btn btn-outline" id="ipCancel">Cancel</button><button class="btn btn-primary" id="ipSave">Save Evidence</button>';
+        openModal(def.name, body, footer);
+        document.getElementById('ipStatus').value = prof.status;
+        document.getElementById('ipCancel').addEventListener('click', closeModal);
+        document.getElementById('ipSave').addEventListener('click', function () {
+            var ev = document.getElementById('ipEvidence').value.trim();
+            var vr = document.getElementById('ipVerifier').value.trim();
+            var st = document.getElementById('ipStatus').value;
+            if (st === 'VERIFIED' && (!ev || !vr)) { showToast('error', '❌ VERIFIED requires evidence and a verifier'); return; }
+            p[key] = { status: st, evidence: ev, verifier: vr, updatedAt: new Date().toISOString() };
+            addLog(p.name + ' ' + def.name + ' → ' + st, 'info');
+            saveData(); renderAll();
+            closeModal();
+            openParticipantDetail(participantId);
+            showToast('success', '✅ ' + def.name + ' evidence saved');
+        });
+    }
+
+    function openAuthorityProfileModal(participantId) {
+        var p = DATA.participants.find(function (x) { return x.id === participantId; });
+        if (!p || !p.authorityProfile) return;
+        var ap = p.authorityProfile;
+        var body = '<p class="text-sm">This profile is <b>computed</b> — it cannot be self-attested. It reflects the real canary authorization gate, refreshed automatically whenever governance state or a canary run is reconciled.</p>' +
+            '<div class="kv-row"><span>Provenance</span><span>' + esc(ap.provenance) + '</span></div>' +
+            '<div class="kv-row"><span>Authorization</span><span class="badge ' + (ap.gate.allowed ? 'badge-active' : 'badge-inactive') + '">' + esc(ap.gate.allowed ? 'AUTHORIZED' : 'NOT_AUTHORIZED') + '</span></div>' +
+            '<div class="kv-row"><span>Reason</span><span class="text-xs">' + esc(ap.gate.reason) + '</span></div>' +
+            '<div class="kv-row"><span>Computed At</span><span class="text-xs">' + esc(fmtDate(ap.computedAt)) + '</span></div>' +
+            '<p class="text-xs text-muted mt-2">To change this: resolve the underlying gate condition (identity completeness, mission profile, active status, or registry integrity) — the profile recomputes automatically.</p>';
+        openModal('Authority Profile — ' + p.name, body, '<button class="btn btn-outline" id="apClose">Close</button>');
+        document.getElementById('apClose').addEventListener('click', closeModal);
+    }
+
+    function openRuntimeVerificationModal(participantId) {
+        var p = DATA.participants.find(function (x) { return x.id === participantId; });
+        if (!p || !p.runtimeVerification) return;
+        var rv = p.runtimeVerification;
+        var body = '<p class="text-sm">This profile is <b>computed</b> — it cannot be self-attested. It reflects this identity\'s actual canary execution history.</p>' +
+            '<div class="kv-row"><span>Runtime Verification</span><span class="badge ' + (rv.verified ? 'badge-active' : 'badge-inactive') + '">' + esc(rv.verified ? 'RUNTIME_VERIFIED' : 'NOT_RUNTIME_VERIFIED') + '</span></div>' +
+            '<div class="kv-row"><span>Independent Verification</span><span>' + esc(rv.independentVerification) + '</span></div>' +
+            '<div class="kv-row"><span>Last Execution ID</span><code class="text-xs">' + esc(rv.lastExecutionId || '—') + '</code></div>' +
+            (rv.lastVerifiedAt ? '<div class="kv-row"><span>Last Verified At</span><span class="text-xs">' + esc(fmtDate(rv.lastVerifiedAt)) + '</span></div>' : '') +
+            '<p class="text-xs text-muted mt-2">To change this: run the Runtime Execution Canary for this identity from the Governance page.</p>';
+        openModal('Runtime Verification — ' + p.name, body, '<button class="btn btn-outline" id="rvClose">Close</button>');
+        document.getElementById('rvClose').addEventListener('click', closeModal);
     }
 
 

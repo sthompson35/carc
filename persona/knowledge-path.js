@@ -30,10 +30,18 @@
         };
     }
 
+    // PIPELINE_PROFILE is not new stored state — it is p.knowledgePath under its canonical name.
+    // This exists so "pipeline profile" is a real, discoverable concept in the codebase rather
+    // than an implicit mapping only documented in a plan file.
+    function getPipelineProfile(p) {
+        return (p && p.knowledgePath) || null;
+    }
+
     // Pure — takes only the participant, never touches global DATA. Mirrors governanceGateState()'s
     // shape, scoped to one identity instead of the whole system.
     function evaluateKnowledgePathState(p) {
-        var stages = (p && p.knowledgePath && p.knowledgePath.stages) || [];
+        var pipeline = getPipelineProfile(p);
+        var stages = (pipeline && pipeline.stages) || [];
         var verified = stages.filter(function (s) { return s.status === 'VERIFIED'; }).length;
         var total = stages.length;
         return { stages: stages, verified: verified, total: total, percent: total ? Math.round((verified / total) * 100) : 0, complete: total > 0 && verified === total };

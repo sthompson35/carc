@@ -38,5 +38,37 @@ module.exports = {
         var dupe = Object.assign({}, participants[1], { serviceMemberId: clean.serviceMemberId });
         ctx.DATA = { participants: participants.concat([dupe]) };
         assert(evaluateCanaryAuthorization(clean).reason === 'REGISTRY_INTEGRITY_FAILED', 'a registry-wide integrity failure blocks authorization even for an individually valid identity');
+
+        // Reset DATA to a clean, uncorrupted registry for the AUTHORITY_PROFILE/RUNTIME_VERIFICATION
+        // checks below.
+        ctx.DATA = { participants: participants, runtimeCanary: { executions: [] } };
+
+        var evaluateAuthorityProfile = ctx.evaluateAuthorityProfile;
+        var evaluateRuntimeVerification = ctx.evaluateRuntimeVerification;
+
+        var authClean = evaluateAuthorityProfile(clean);
+        assert(authClean.provenance === clean.missionProfile.authority, 'evaluateAuthorityProfile carries the missionProfile.authority provenance label');
+        assert(authClean.gate.allowed === true, 'evaluateAuthorityProfile wraps a passing gate for a clean canonical participant');
+
+        var authInactive = evaluateAuthorityProfile(inactive);
+        assert(authInactive.gate.reason === 'TARGET_INACTIVE', 'evaluateAuthorityProfile reflects the underlying gate rejection reason');
+
+        // participantsOverride keeps evaluateCanaryAuthorization (and therefore evaluateAuthorityProfile)
+        // callable without touching global DATA — the exact property that makes it migration-safe.
+        var authOverride = evaluateAuthorityProfile(clean, participants);
+        assert(authOverride.gate.allowed === true, 'evaluateAuthorityProfile accepts an explicit participantsOverride instead of reading global DATA');
+
+        var rvNone = evaluateRuntimeVerification(clean, []);
+        assert(rvNone.verified === false && rvNone.lastExecutionId === '', 'evaluateRuntimeVerification with no executions reports unverified and no execution id');
+
+        var rvVerified = evaluateRuntimeVerification(clean, [
+            { targetServiceMemberId: clean.serviceMemberId, executionId: 'E1', startedAt: '2026-01-01T00:00:00.000Z', runtimeVerified: true, independentVerification: 'RUNTIME_VERIFIED' }
+        ]);
+        assert(rvVerified.verified === true && rvVerified.lastExecutionId === 'E1' && rvVerified.independentVerification === 'RUNTIME_VERIFIED', 'evaluateRuntimeVerification finds a verified execution for this identity in an explicit executions override');
+
+        var rvUnverifiedOnly = evaluateRuntimeVerification(clean, [
+            { targetServiceMemberId: clean.serviceMemberId, executionId: 'E2', startedAt: '2026-01-02T00:00:00.000Z', runtimeVerified: false, independentVerification: 'PENDING' }
+        ]);
+        assert(rvUnverifiedOnly.verified === false && rvUnverifiedOnly.lastExecutionId === 'E2', 'evaluateRuntimeVerification falls back to the most recent unverified execution when none are verified');
     }
 };

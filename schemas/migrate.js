@@ -286,6 +286,30 @@
                 text:'CARC v3.23.0 added a canonical knowledge-path registry: every controlled identity now carries an honest, per-identity 10-stage pipeline (competencies → curriculum modules → governed sources → tools → permissions → exercises → assessment → certification → mission eligibility → review acknowledgement). Each stage starts PENDING and requires genuine evidence and a named verifier to reach VERIFIED — mission eligibility is the one exception, computed automatically from the 8 prerequisite stages rather than manually attested. No content is pre-filled; the pipeline starts empty for all 66 identities.'
             });
         }
-        d.schemaVersion = 17;
+        if ((d.schemaVersion || 0) < 18) {
+            // Migration-safe: evaluateAuthorityProfile/evaluateRuntimeVerification both accept an
+            // explicit override so they never touch global DATA here (see the v16 comment above —
+            // same v3.19.0 crash class).
+            d.participants.forEach(function (p) {
+                if (!p.serviceMemberId) return;
+                // Fully computed, never hand-entered — like readiness, always recomputed fresh on
+                // every migration pass, never preserved.
+                p.authorityProfile = evaluateAuthorityProfile(p, d.participants);
+                p.runtimeVerification = evaluateRuntimeVerification(p, d.runtimeCanary.executions);
+                // These carry real hand-attested evidence once used — never overwrite existing
+                // progress, only backfill if absent (same rule as the v17 knowledgePath backfill).
+                IDENTITY_PROFILE_DEFS.forEach(function (def) {
+                    if (!p[def.key]) p[def.key] = buildDefaultIdentityProfile();
+                });
+            });
+            d.governance.release = 'CARC v3.24.0 — Authority, Runtime Verification & Identity Profile Registry';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({
+                time:new Date().toISOString(),
+                type:'architecture',
+                text:'CARC v3.24.0 unified authority provenance with the real canary authorization gate into one per-identity authorityProfile; added a per-identity runtimeVerification field computed from actual canary execution history; and added an honest, empty-by-default Persona / Communication Profile / Handoff Profile registry — all three start PENDING with nothing pre-filled and require genuine evidence and a named verifier to reach VERIFIED.'
+            });
+        }
+        d.schemaVersion = 18;
         return d;
     }
