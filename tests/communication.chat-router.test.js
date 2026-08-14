@@ -7,6 +7,7 @@ module.exports = {
         'data/roster.js',
         'persona/mission-doctrine.js',
         'persona/identity.js',
+        'persona/alias-registry.js',
         'communication/chat-router.js'
     ],
     run: function (ctx, assert) {
@@ -37,6 +38,31 @@ module.exports = {
         assert(findChatTargets('@VEX @VEX status', 'AUTO').length === 1, 'findChatTargets de-duplicates repeated mentions of the same identity');
         assert(findChatTargets('no mentions', 'AUTO').length === 0, 'findChatTargets returns empty array with no mentions');
         assert(findChatTargets('irrelevant', 'ALL').length === 0, 'findChatTargets returns empty array for explicit ALL');
+
+        // Widened resolution: mentions now also resolve via legacy ID / active-verified alias,
+        // not just a real canonical callsign — real behavior change from wiring in
+        // resolveCanonicalIdentity, must not break any assertion above. Note: the @mention
+        // regex (/@([A-Z0-9_]+)/i) doesn't allow hyphens, so a realistic hyphenated legacy ID
+        // (e.g. "ATA-OLD-VEX-000") can only be reached via the explicit-target path, not free
+        // text — tested separately below with a realistic value.
+        vex.legacyIds = [{ value: 'OLDVEXID', normalizedValue: 'OLDVEXID', type: 'LEGACY_ID', canonicalTargetId: vex.callsignId, status: 'ACTIVE' }];
+        assert(findChatTarget('@OLDVEXID status', 'AUTO').id === vex.id, 'findChatTarget now resolves a legacy-ID mention (widened behavior)');
+
+        vex.legacyIds = [{ value: 'ATA-OLD-VEX-000', normalizedValue: 'ATA-OLD-VEX-000', type: 'LEGACY_ID', canonicalTargetId: vex.callsignId, status: 'ACTIVE' }];
+        assert(findChatTarget('irrelevant', 'ATA-OLD-VEX-000').id === vex.id, 'findChatTarget resolves a realistic hyphenated legacy ID via the explicit-target path');
+
+        mape.aliases = [{ value: '@OLDMAPE', normalizedValue: 'OLDMAPE', type: 'LEGACY_CALLSIGN', canonicalTarget: mape.callsign, canonicalTargetId: mape.callsignId, status: 'ACTIVE', verified: true }];
+        assert(findChatTarget('@OLDMAPE status', 'AUTO').id === mape.id, 'findChatTarget now resolves an active-verified alias mention (widened behavior)');
+
+        // Collision must not throw out of findChatTarget/findChatTargets — translated to
+        // null/skip, consistent with the existing no-match contract.
+        var collisionOwner = participants.find(function (p) { return p.callsign === '@GRANT'; });
+        collisionOwner.aliases = [{ value: '@DUPETAG', normalizedValue: 'DUPETAG', type: 'LEGACY_CALLSIGN', canonicalTarget: collisionOwner.callsign, canonicalTargetId: collisionOwner.callsignId, status: 'ACTIVE', verified: true }];
+        var otherOwner = participants.find(function (p) { return p.callsign === '@SALLY'; });
+        otherOwner.aliases = [{ value: '@DUPETAG', normalizedValue: 'DUPETAG', type: 'LEGACY_CALLSIGN', canonicalTarget: otherOwner.callsign, canonicalTargetId: otherOwner.callsignId, status: 'ACTIVE', verified: true }];
+        assert(findChatTarget('@DUPETAG status', 'AUTO') === null, 'findChatTarget returns null (not a thrown error) when an alias collides across two identities');
+        assert(findChatTargets('@DUPETAG status', 'AUTO').length === 0, 'findChatTargets skips (not throws on) a colliding alias mention');
+        vex.legacyIds = []; mape.aliases = []; collisionOwner.aliases = []; otherOwner.aliases = [];
 
         // Risk classification
         assert(classifyCommandRisk('BROADCAST') === 'ROSTER_WIDE', 'BROADCAST classifies as ROSTER_WIDE');

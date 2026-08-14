@@ -97,6 +97,12 @@ export default async function run(page) {
         const ipReopenedBadge = await page.locator('#modalBody .gate-item:has(.ip-evidence-edit)').first().locator('.badge').innerText().catch(() => '');
         check(ipReopenedBadge === 'VERIFIED', 'saved identity-profile evidence+verifier flips it to VERIFIED and the reopened modal reflects it');
 
+        // Legacy Identifiers / Aliases: read-only, no editable fields. Every migrated
+        // participant has exactly 1 legacyIds entry (seeded from legacyAlias); aliases starts
+        // empty for all 66 — no real alias data exists yet.
+        const legacyCards = page.locator('#modalBody .gate-grid .gate-item').filter({ hasNotText: 'Evidence:' });
+        check((await legacyCards.count()) >= 1, 'participant detail modal renders at least 1 read-only legacy-identifier card');
+
         // Authority Profile / Runtime Verification: computed, read-only — no editable fields.
         // closeModal() clears the whole modal body (not just the sub-view), so the participant
         // detail modal has to be reopened between these two checks, not just closed once.
@@ -210,9 +216,31 @@ export default async function run(page) {
     const kpBreakdownRows = await page.locator('#kpStageBreakdown .chart-bar').count();
     check(kpBreakdownRows === 10, 'governance page renders a 10-row knowledge-path stage breakdown');
 
+    // No real bad alias data exists on a clean migrated dataset, so the new blockers/warnings
+    // blocks must stay invisible — this is an additive UI change and must cost nothing today.
+    const govAuditBodyText = await page.locator('#govAuditBody').innerText().catch(() => '');
+    check(!/Alias\/Legacy-ID Blockers/.test(govAuditBodyText) && !/Alias\/Legacy-ID Warnings/.test(govAuditBodyText), 'governance registry panel shows no alias blockers/warnings on a clean dataset');
+
     await page.locator('.nav-link[data-route="admin"]').first().click({ timeout: 5000 });
     await page.waitForTimeout(300);
     check((await page.locator('#page-admin').getAttribute('hidden')) === null, 'admin page renders and is visible');
+
+    // Tool ID Lookup: existing match/no-match paths still work identically after being
+    // rewired through resolveCanonicalIdentity.
+    const toolIdInput = page.locator('#toolIdLookupInput');
+    if (await toolIdInput.count()) {
+        await toolIdInput.fill('@VEX');
+        await page.locator('#toolIdLookupBtn').click({ timeout: 5000 });
+        await page.waitForTimeout(300);
+        const foundText = await page.locator('#toolIdLookupResult').innerText().catch(() => '');
+        check(/VEX/.test(foundText), 'Tool ID Lookup still resolves a known callsign after the resolveCanonicalIdentity rewire');
+
+        await toolIdInput.fill('NO_SUCH_IDENTITY_XYZ');
+        await page.locator('#toolIdLookupBtn').click({ timeout: 5000 });
+        await page.waitForTimeout(300);
+        const notFoundText = await page.locator('#toolIdLookupResult').innerText().catch(() => '');
+        check(/No match found/.test(notFoundText), 'Tool ID Lookup still reports no-match for a garbage query');
+    }
 
     console.log('\n  captured page console/errors during this run (' + pageEvents.length + '):');
     pageEvents.forEach((e) => console.log('    ' + e));

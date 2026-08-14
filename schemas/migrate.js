@@ -40,8 +40,12 @@
                 seenLegacy[p.legacyAlias] = true;
             }
         });
+        var aliasAudit = auditAliasRegistry(participants);
+        aliasAudit.blockers.forEach(function (b) {
+            issues.push('Alias registry blocker [' + b.code + ']: ' + b.alias + ' (owner ' + b.aliasOwner + ')' + (b.conflictingCanonicalOwner ? ' vs ' + b.conflictingCanonicalOwner : ''));
+        });
         if (controlled.length !== 66) issues.push('Controlled roster count is ' + controlled.length + '; expected 66');
-        return { controlled: controlled.length, issues: issues, valid: issues.length === 0 };
+        return { controlled: controlled.length, issues: issues, valid: issues.length === 0, blockers: aliasAudit.blockers, warnings: aliasAudit.warnings };
     }
 
     function migrateData(d) {
@@ -310,6 +314,48 @@
                 text:'CARC v3.24.0 unified authority provenance with the real canary authorization gate into one per-identity authorityProfile; added a per-identity runtimeVerification field computed from actual canary execution history; and added an honest, empty-by-default Persona / Communication Profile / Handoff Profile registry — all three start PENDING with nothing pre-filled and require genuine evidence and a named verifier to reach VERIFIED.'
             });
         }
-        d.schemaVersion = 18;
+        if ((d.schemaVersion || 0) < 19) {
+            // Migration-safe: only touches the local `d` parameter; auditAliasRegistry (called
+            // via auditCanonicalRegistry below) takes an explicit participants array, never
+            // global DATA — same v3.19.0 crash class this comment pattern has guarded against
+            // since v16.
+            d.participants.forEach(function (p) {
+                if (!p.serviceMemberId) return;
+                if (!Array.isArray(p.aliases)) p.aliases = [];
+                if (!Array.isArray(p.legacyIds)) p.legacyIds = [];
+                // Idempotent, non-destructive: seed the one real legacyAlias value as a
+                // legacyIds[] entry only if it isn't already represented by value. A plain
+                // `!p.legacyIds` guard (the pattern prior steps use) is NOT safe here, because
+                // rosterToParticipant now always sets legacyIds to a literal [] — the array
+                // already "exists", empty, before this block runs.
+                var alreadySeeded = p.legacyIds.some(function (l) { return l && l.value === p.legacyAlias; });
+                if (p.legacyAlias && !alreadySeeded) {
+                    var seededAt = new Date().toISOString();
+                    p.legacyIds.push({
+                        value: p.legacyAlias,
+                        normalizedValue: normalizeIdentity(p.legacyAlias),
+                        type: 'LEGACY_ID',
+                        canonicalTargetId: p.callsignId,
+                        sourceRecordId: p.serviceMemberId,
+                        status: ALIAS_STATUS.ACTIVE,
+                        validFrom: seededAt,
+                        validTo: null,
+                        reason: 'Migrated from legacyAlias field at schema v19 — real pre-existing legacy identifier, not fabricated.'
+                    });
+                }
+            });
+            // Recompute now (not relying on the unconditional call earlier in this function) so
+            // d.registryAudit reflects the legacyIds just backfilled above, not the pre-backfill
+            // state.
+            d.registryAudit = auditCanonicalRegistry(d.participants);
+            d.governance.release = 'CARC v3.25.0 — Governed Alias & Legacy Identifier Registry';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({
+                time:new Date().toISOString(),
+                type:'architecture',
+                text:'CARC v3.25.0 added a governed alias/legacy-identifier registry: every controlled identity now carries aliases[] and legacyIds[], non-destructively seeded from the existing legacyAlias field, resolved through a single-precedence identity resolver (canonical ID > canonical callsign > legacy ID > active verified alias) that never inspects readiness or execution status, and audited for missing/mismatched targets, alias chains, collisions, and unverified activations. Wired into Agent Chat targeting, the Runtime Canary target lookup, and the Admin Tool ID Lookup.'
+            });
+        }
+        d.schemaVersion = 19;
         return d;
     }

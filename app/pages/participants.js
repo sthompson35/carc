@@ -199,6 +199,19 @@
                 (p.runtimeVerification ? '<div class="kv-row"><span>Runtime Verification</span><span><span class="badge ' + (p.runtimeVerification.verified ? 'badge-active' : 'badge-inactive') + '">' + esc(p.runtimeVerification.verified ? 'RUNTIME_VERIFIED' : 'NOT_RUNTIME_VERIFIED') + '</span> <button class="btn btn-outline btn-sm rv-view" data-pid="' + esc(p.id) + '">View</button></span></div>' : '') +
                 '</div>';
         }
+        var aliasRows =
+            '<div class="mt-2"><strong class="text-sm">Legacy Identifiers (' + (p.legacyIds || []).length + ')</strong>' +
+            '<div class="gate-grid mt-1">' + ((p.legacyIds || []).length ? (p.legacyIds || []).map(function (l) {
+                return '<div class="gate-item"><div class="gate-head"><div class="gate-name">' + esc(l.value) + '</div><span class="badge ' + aliasStatusBadgeClass(l.status) + '">' + esc(l.status) + '</span></div>' +
+                    '<div class="gate-desc">' + esc(l.type) + ' → ' + esc(l.canonicalTargetId || '—') + '</div>' +
+                    '<div class="gate-meta">' + esc(l.reason || '') + '</div></div>';
+            }).join('') : '<span class="text-muted text-sm">No legacy identifiers on file</span>') + '</div></div>' +
+            '<div class="mt-2"><strong class="text-sm">Aliases (' + (p.aliases || []).length + ')</strong>' +
+            '<div class="gate-grid mt-1">' + ((p.aliases || []).length ? (p.aliases || []).map(function (a) {
+                return '<div class="gate-item"><div class="gate-head"><div class="gate-name">' + esc(a.value) + '</div><span class="badge ' + aliasStatusBadgeClass(a.status) + '">' + esc(a.status) + '</span></div>' +
+                    '<div class="gate-desc">' + esc(a.type) + ' → ' + esc(a.canonicalTarget || '—') + '</div>' +
+                    '<div class="gate-meta">Verified: ' + (a.verified ? 'YES' : 'NO') + (a.verifiedBy ? ' · ' + esc(a.verifiedBy) : '') + '</div></div>';
+            }).join('') : '<span class="text-muted text-sm">No aliases on file</span>') + '</div></div>';
         var body =
             '<div class="flex gap-1" style="align-items:center;">' +
             '<span class="avatar-wrap"><span class="participant-avatar ' + (AVATAR_CLASS[p.type] || 'avatar-user') + '" style="width:44px;height:44px;font-size:1rem;">' + esc(p.name.charAt(0)) + '</span>' + (isOnline(p) ? '<span class="online-dot"></span>' : '') + '</span>' +
@@ -212,6 +225,7 @@
             '<div class="kv-row"><span>Last Active</span><span>' + relTime(p.lastActive) + '</span></div>' +
             '</div>' +
             canonicalRows +
+            aliasRows +
             (p.missionProfile ? '<div class="mt-2"><strong class="text-sm">Mission Doctrine</strong>' +
                 '<div class="kv-row"><span>Profile Authority</span><span>' + esc(p.missionProfile.authority) + '</span></div>' +
                 '<div class="kv-row"><span>Profile Status</span><span>' + esc(p.missionProfile.profileStatus) + '</span></div>' +

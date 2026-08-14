@@ -5,7 +5,7 @@
         var rc = DATA.runtimeCanary = DATA.runtimeCanary || {};
         var targetId = (document.getElementById('canaryTarget') || {}).value || rc.targetServiceMemberId || 'ATA-VEX-000';
         rc.targetServiceMemberId = targetId;
-        var p = DATA.participants.find(function(x){ return x.serviceMemberId === targetId; });
+        var p = (function () { try { return resolveCanonicalIdentity(targetId, DATA.participants); } catch (e) { return null; } })();
         var started = new Date().toISOString();
         var executionId = canaryId('EXEC');
         var missionId = canaryId('MISSION');
@@ -145,7 +145,7 @@
             badge.textContent = rc.state || 'NOT_RUN';
             badge.className = 'badge ' + (rc.state === 'RUNTIME_VERIFIED' ? 'badge-active' : rc.state === 'CANARY_COMPLETE' ? 'badge-completed' : rc.state === 'BLOCKED' ? 'badge-inactive' : 'badge-archived');
         }
-        var target = DATA.participants.find(function(p){ return p.serviceMemberId === rc.targetServiceMemberId; });
+        var target = (function () { try { return resolveCanonicalIdentity(rc.targetServiceMemberId, DATA.participants); } catch (e) { return null; } })();
         var summary = document.getElementById('canarySummary');
         if (summary) summary.innerHTML =
             '<div class="kv-row"><span>Target</span><b>'+esc(target ? target.callsign : (rc.targetServiceMemberId || '—'))+'</b></div>'+

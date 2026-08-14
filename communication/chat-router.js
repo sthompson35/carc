@@ -103,15 +103,19 @@
         showToast('success', '⬇️ Chat transcript exported');
     }
 
+    // Routes through resolveCanonicalIdentity (canonical ID > canonical callsign > legacy ID >
+    // active verified alias), catching its thrown errors and translating them back to this
+    // function's existing null-on-no-match contract — nothing here throws. Real behavior
+    // widening over the old callsign-only match: an @mention or explicit target can now also
+    // resolve via a legacy ID or an active-verified alias, not just a real callsign.
     function findChatTarget(query, explicitTarget) {
         if (explicitTarget === 'ALL') return null;
         if (explicitTarget && explicitTarget !== 'AUTO') {
-            return DATA.participants.find(function (p) { return p.serviceMemberId === explicitTarget; }) || null;
+            try { return resolveCanonicalIdentity(explicitTarget, DATA.participants); } catch (e) { return null; }
         }
         var m = String(query || '').match(/@([A-Z0-9_]+)/i);
         if (!m) return null;
-        var cs = '@' + m[1].toUpperCase();
-        return DATA.participants.find(function (p) { return String(p.callsign || '').toUpperCase() === cs; }) || null;
+        try { return resolveCanonicalIdentity(m[1], DATA.participants); } catch (e) { return null; }
     }
     // Plural counterpart: resolves every @callsign mention in a message, not just the first,
     // so "@VEX @MAPE status" addresses both instead of silently dropping the second mention.
@@ -121,15 +125,14 @@
     function findChatTargets(query, explicitTarget) {
         if (explicitTarget === 'ALL') return [];
         if (explicitTarget && explicitTarget !== 'AUTO') {
-            var one = DATA.participants.find(function (p) { return p.serviceMemberId === explicitTarget; });
-            return one ? [one] : [];
+            try { var one = resolveCanonicalIdentity(explicitTarget, DATA.participants); return one ? [one] : []; } catch (e) { return []; }
         }
         var mentions = String(query || '').match(/@([A-Z0-9_]+)/gi) || [];
         if (!mentions.length) return [];
         var seen = {}, out = [];
         mentions.forEach(function (raw) {
-            var cs = raw.toUpperCase();
-            var p = DATA.participants.find(function (x) { return String(x.callsign || '').toUpperCase() === cs; });
+            var p = null;
+            try { p = resolveCanonicalIdentity(raw, DATA.participants); } catch (e) { p = null; }
             if (p && !seen[p.id]) { seen[p.id] = true; out.push(p); }
         });
         return out;

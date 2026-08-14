@@ -6,6 +6,7 @@ module.exports = {
         'app/util.js',
         'data/roster.js',
         'persona/mission-doctrine.js',
+        'persona/alias-registry.js',
         'schemas/migrate.js',
         'persona/identity.js'
     ],

@@ -9,7 +9,7 @@
         // DATA is still undefined. Without this guard that call chain threw on every reload for
         // any user who had ever run a roll call, crashing init() before anything got wired up.
         if (typeof DATA === 'undefined' || !DATA) {
-            return { requirements: [], verified: 0, total: 0, registry: { controlled: 0, issues: [], valid: true }, complete: false, percent: 0 };
+            return { requirements: [], verified: 0, total: 0, registry: { controlled: 0, issues: [], valid: true, blockers: [], warnings: [] }, complete: false, percent: 0 };
         }
         var reqs = (DATA.governance && DATA.governance.requirements) || [];
         var verified = reqs.filter(function (r) { return r.status === 'VERIFIED'; }).length;
@@ -66,7 +66,9 @@
         $all('.gov-evidence-edit').forEach(function (btn) { btn.addEventListener('click', function () { openGovernanceEvidenceModal(btn.getAttribute('data-id')); }); });
         document.getElementById('govAuditBadge').textContent = gate.registry.valid ? 'PASS' : 'FAIL';
         document.getElementById('govAuditBadge').className = 'badge ' + (gate.registry.valid ? 'badge-active' : 'badge-inactive');
-        document.getElementById('govAuditBody').innerHTML = '<div class="kv-row"><span>Controlled identities</span><b>'+gate.registry.controlled+' / '+(DATA.governance.canonicalRosterExpected||66)+'</b></div><div class="kv-row"><span>Integrity result</span><span class="'+(gate.registry.valid?'audit-ok':'audit-bad')+'">'+(gate.registry.valid?'PASS':'FAIL')+'</span></div>' + (gate.registry.issues.length ? '<div class="mt-1 text-xs">'+gate.registry.issues.map(function (x) { return '• '+esc(x); }).join('<br>')+'</div>' : '<div class="mt-1 text-xs text-muted">No missing canonical IDs, duplicate IDs, format violations, or callsign collisions detected.</div>');
+        document.getElementById('govAuditBody').innerHTML = '<div class="kv-row"><span>Controlled identities</span><b>'+gate.registry.controlled+' / '+(DATA.governance.canonicalRosterExpected||66)+'</b></div><div class="kv-row"><span>Integrity result</span><span class="'+(gate.registry.valid?'audit-ok':'audit-bad')+'">'+(gate.registry.valid?'PASS':'FAIL')+'</span></div>' + (gate.registry.issues.length ? '<div class="mt-1 text-xs">'+gate.registry.issues.map(function (x) { return '• '+esc(x); }).join('<br>')+'</div>' : '<div class="mt-1 text-xs text-muted">No missing canonical IDs, duplicate IDs, format violations, or callsign collisions detected.</div>')
+            + ((gate.registry.blockers && gate.registry.blockers.length) ? '<div class="mt-1 text-xs"><strong class="audit-bad">Alias/Legacy-ID Blockers ('+gate.registry.blockers.length+')</strong><br>'+gate.registry.blockers.map(function (b) { return '• ['+esc(b.code)+'] '+esc(b.alias)+' — owner '+esc(b.aliasOwner)+(b.conflictingCanonicalOwner?' vs '+esc(b.conflictingCanonicalOwner):''); }).join('<br>')+'</div>' : '')
+            + ((gate.registry.warnings && gate.registry.warnings.length) ? '<div class="mt-1 text-xs"><strong class="audit-warn">Alias/Legacy-ID Warnings ('+gate.registry.warnings.length+')</strong><br>'+gate.registry.warnings.map(function (w) { return '• ['+esc(w.code)+'] '+esc(w.alias)+' — owner '+esc(w.aliasOwner); }).join('<br>')+'</div>' : '');
         var types={}; DATA.participants.filter(function(p){return p.serviceMemberId;}).forEach(function(p){types[p.type]=(types[p.type]||0)+1;});
         renderBarList('govIdentityComposition', Object.keys(types).map(function(t){return {label:TYPE_LABELS[t]||t,value:types[t]};}), { colorFn:function(){return 'purple';} });
         document.getElementById('govKpis').innerHTML = [

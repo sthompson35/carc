@@ -105,12 +105,10 @@
         var q = input.value.trim();
         var resultEl = document.getElementById('toolIdLookupResult');
         if (!q) { resultEl.innerHTML = '<span class="text-muted">Enter an ID, callsign, or alias to search.</span>'; return; }
-        var qUpper = q.toUpperCase().replace(/^@/, '');
-        var qNorm = '@' + qUpper;
-        var p = DATA.participants.find(function (x) {
-            return [x.serviceMemberId, x.callsignId, x.agentId, x.legacyAlias, x.sourceId].some(function (v) { return v && String(v).toUpperCase() === qUpper; })
-                || String(x.callsign || '').toUpperCase() === qNorm;
-        });
+        var p = null, collision = false;
+        try { p = resolveCanonicalIdentity(q, DATA.participants); }
+        catch (e) { collision = String(e.message || '').indexOf('ALIAS_IDENTITY_COLLISION') === 0; p = null; }
+        if (collision) { resultEl.innerHTML = '<span class="audit-bad">Multiple canonical identities match "' + esc(q) + '" — this alias is ambiguous and requires registry correction.</span>'; return; }
         if (!p) { resultEl.innerHTML = '<span class="text-muted">No match found for "' + esc(q) + '".</span>'; return; }
         resultEl.innerHTML =
             '<div class="kv-row"><span>Name</span><b>' + esc(p.name) + '</b></div>' +

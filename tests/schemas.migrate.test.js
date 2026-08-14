@@ -11,6 +11,7 @@ module.exports = {
         'persona/identity.js',
         'persona/knowledge-path.js',
         'persona/identity-profiles.js',
+        'persona/alias-registry.js',
         'schemas/migrate.js',
         'data/seed.js',
         'communication/chat-router.js',
@@ -20,8 +21,12 @@ module.exports = {
         var migrateData = ctx.migrateData;
 
         var d = migrateData({});
-        assert(d.schemaVersion === 18, 'migrateData sets schemaVersion to 18 (got ' + d.schemaVersion + ')');
+        assert(d.schemaVersion === 19, 'migrateData sets schemaVersion to 19 (got ' + d.schemaVersion + ')');
         assert(Array.isArray(d.participants) && d.participants.length === 66, 'migrateData populates all 66 canonical participants from ROSTER');
+
+        assert(d.participants.every(function (p) { return Array.isArray(p.aliases) && p.aliases.length === 0; }), 'a fresh migration leaves aliases[] empty for all 66 identities — no fabricated alias data');
+        assert(d.participants.every(function (p) { return Array.isArray(p.legacyIds) && p.legacyIds.length === 1 && p.legacyIds[0].value === p.legacyAlias; }), 'a fresh migration seeds exactly one real legacyIds[] entry from the existing legacyAlias value');
+        assert(d.participants.every(function (p) { return p.legacyIds[0].status === 'ACTIVE' && p.legacyIds[0].type === 'LEGACY_ID'; }), 'the seeded legacyIds entry has ACTIVE status and LEGACY_ID type');
 
         assert(d.participants.every(function (p) { return p.knowledgePath && p.knowledgePath.stages.length === 10; }), 'every canonical participant gets a 10-stage knowledge path');
         assert(d.participants.every(function (p) { return p.knowledgePath.stages.every(function (s) { return s.status === 'PENDING'; }); }), 'a fresh migration backfills every knowledge-path stage as empty/PENDING, never pre-filled');
@@ -78,5 +83,16 @@ module.exports = {
         var ipD2 = migrateData(ipD);
         var ipReMigrated = ipD2.participants.find(function (p) { return p.serviceMemberId === ipTarget.serviceMemberId; });
         assert(ipReMigrated.personaProfile.status === 'VERIFIED', 're-running migration does not clobber already-recorded persona profile progress');
+
+        // Re-migration must not clobber or duplicate legacyIds/aliases progress — same isolated-
+        // run pattern as the knowledge-path/identity-profile checks above.
+        var aliasD = migrateData({});
+        var aliasTarget = aliasD.participants[0];
+        aliasTarget.legacyIds.push({ value: 'ATA-HAND-ADDED-000', normalizedValue: 'ATA-HAND-ADDED-000', type: 'LEGACY_ID', canonicalTargetId: aliasTarget.callsignId, status: 'ACTIVE', reason: 'manually added' });
+        aliasD.schemaVersion = 18;
+        var aliasD2 = migrateData(aliasD);
+        var aliasReMigrated = aliasD2.participants.find(function (p) { return p.serviceMemberId === aliasTarget.serviceMemberId; });
+        assert(aliasReMigrated.legacyIds.length === 2, 're-running migration preserves a hand-added legacyIds entry alongside the seeded one, not duplicated');
+        assert(aliasReMigrated.legacyIds.filter(function (l) { return l.value === aliasReMigrated.legacyAlias; }).length === 1, 're-running migration does not duplicate the originally-seeded legacyIds entry');
     }
 };

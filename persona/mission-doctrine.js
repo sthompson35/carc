@@ -125,7 +125,9 @@
             missionProfile: missionProfileForRoster(r),
             canonicalStatus: 'CANONICAL_RECONCILED',
             readiness: 'READINESS_UNKNOWN',
-            sourceId: r.serviceMemberId
+            sourceId: r.serviceMemberId,
+            aliases: [],
+            legacyIds: []
         };
     }
 
