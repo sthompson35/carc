@@ -37,8 +37,11 @@ MSYS_NO_PATHCONV=1 node "C:\Users\sdtho\.claude\skills\browser-automation\browse
 ```
 
 This drives all 7 routes, participant search, targeted + multi-target chat,
-chat search, roll call (closing any modal it opens), and confirms Governance/
-Admin render with no backend reachable — using only real clicks and DOM reads
+chat search, the broadcast approval gate (a native `confirm()` dialog, both
+decline and accept paths — a different Playwright mechanism, `page.on('dialog')`,
+than the custom `#modalOverlay` handling used for the roll-call button), roll
+call, and confirms Governance/Admin render with no backend reachable — using
+only real clicks and DOM reads
 (`.innerHTML`/`.getAttribute`/`.count`/`page.title()`), never
 `page.evaluate()` reads of app globals or `location.hash =` assignment. Both
 are unreliable here: `page.evaluate()` runs in an isolated JS world that

@@ -301,7 +301,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75rem;ba
         </div>
         <div class="panel">
           <div class="panel-header"><div class="panel-title">🔒 Sync Trust State <span class="text-xs text-muted">(server-authoritative)</span></div></div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
             <div>
               <div class="kv-row"><span>Roster state</span><span id="trustRosterState">—</span></div>
               <div class="kv-row"><span>Roster last sync</span><span class="text-xs" id="trustRosterLastSync">—</span></div>
@@ -313,6 +313,10 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75rem;ba
             <div>
               <div class="kv-row"><span>Chat state</span><span id="trustChatState">—</span></div>
               <div class="kv-row"><span>Chat last sync</span><span class="text-xs" id="trustChatLastSync">—</span></div>
+            </div>
+            <div>
+              <div class="kv-row"><span>Command state</span><span id="trustCommandsState">—</span></div>
+              <div class="kv-row"><span>Command last sync</span><span class="text-xs" id="trustCommandsLastSync">—</span></div>
             </div>
           </div>
         </div>
@@ -641,10 +645,11 @@ function renderTrustState(trustStatus){
     fill('Roster', trustStatus&&trustStatus.roster);
     fill('RollCall', trustStatus&&trustStatus.roll_calls);
     fill('Chat', trustStatus&&trustStatus.chat);
+    fill('Commands', trustStatus&&trustStatus.chat_command);
 }
 function renderSyncEvents(rows, status){
     const parts=[];
-    ['roster','roll_calls'].forEach(function(t){
+    ['roster','roll_calls','chat','chat_command'].forEach(function(t){
         const s=status&&status[t];
         if(s)parts.push(t+': '+s.initiator+' · '+fmtDate(s.startedAt));
     });

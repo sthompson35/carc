@@ -348,8 +348,45 @@ async function run() {
     if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
     console.log('     e2e-created backup file cleaned up');
 
-    // ── 16. revoke temp token; confirm 403 ───────────────────────
-    console.log('\n[16] Revoke temp token → confirm 403');
+    // ── 16. command audit sync round-trip ──────────────────────────
+    console.log('\n[16] Command audit sync round-trip');
+    const cmdId = 'CMD-E2E-' + Date.now();
+    const cmdAt = new Date().toISOString();
+    t = await authReq(port, '/api/commands/sync', 'POST', tmpToken, {
+        records: [{ id: cmdId, event: 'e2e command audit drill', status: 'warning', risk: 'ROSTER_WIDE', contentHash: 'deadbeef', occurredAt: cmdAt }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.synced === 1 && data.inserted === 1, 'POST /api/commands/sync → 1 record inserted');
+    assert(typeof data.executionId === 'string' && data.executionId.startsWith('SYNC-CHAT_COMMAND-'), 'command sync response carries a chat_command-scoped executionId');
+
+    t = await authReq(port, '/api/commands?limit=100', 'GET', tmpToken);
+    data = t.json();
+    const cmdRow = (data.rows || []).find(r => r.id === cmdId);
+    assert(!!cmdRow && cmdRow.risk === 'ROSTER_WIDE' && cmdRow.contentHash === 'deadbeef', 'GET /api/commands reflects the synced event');
+
+    // idempotency: resubmitting the identical event must not mutate it
+    t = await authReq(port, '/api/commands/sync', 'POST', tmpToken, {
+        records: [{ id: cmdId, event: 'e2e command audit drill', status: 'warning', risk: 'ROSTER_WIDE', contentHash: 'deadbeef', occurredAt: cmdAt }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.inserted === 0 && data.updated === 0 && data.unchanged === 1, 'repeat command sync → 0 inserted, 0 updated, 1 unchanged (idempotent)');
+    const cmdCountAfter = db.prepare('SELECT COUNT(*) AS n FROM command_audit_events WHERE id = ?').get(cmdId).n;
+    assert(cmdCountAfter === 1, 'repeat command sync does not duplicate the row');
+
+    t = await authReq(port, '/api/sync-events?type=chat_command', 'GET', tmpToken);
+    data = t.json();
+    assert(Array.isArray(data.rows) && data.rows.every(r => r.syncType === 'chat_command'), '/api/sync-events?type=chat_command returns only chat_command rows');
+    assert(data.rows.length >= 2, '/api/sync-events?type=chat_command recorded both the initial and repeat sync');
+
+    t = await authReq(port, '/api/sync-status', 'GET', tmpToken);
+    data = t.json();
+    assert(data.chat_command && data.chat_command.state === 'CURRENT', 'sync-status surfaces chat_command as CURRENT (' + (data.chat_command && data.chat_command.state) + ')');
+
+    db.prepare('DELETE FROM command_audit_events WHERE id = ?').run(cmdId);
+    console.log('     command audit test record cleaned up (sync_events audit rows intentionally left — append-only trail)');
+
+    // ── 17. revoke temp token; confirm 403 ───────────────────────
+    console.log('\n[17] Revoke temp token → confirm 403');
     db.prepare('UPDATE tokens SET active = 0 WHERE id = ?').run(tmpId);
     t = await authReq(port, '/api/stats', 'GET', tmpToken);
     assert(t.status === 403, 'revoked token → 403');

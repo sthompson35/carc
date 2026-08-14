@@ -69,6 +69,37 @@ export default async function run(page) {
     const bubblesAfter2 = await page.locator('.chat-bubble').count();
     check(bubblesAfter2 > bubblesBefore2, 'multi-target @VEX @MAPE chat appends response bubble(s)');
 
+    // Command governance: a roster-wide broadcast is gated behind a native confirm() dialog
+    // (participants.js's bulk-delete pattern, reused here) — a different Playwright mechanism
+    // (page.on('dialog')) than the custom #modalOverlay handled above for the roll-call button.
+    {
+        let dialogMessage = '';
+        const onDismissDialog = async (dialog) => { dialogMessage = dialog.message(); await dialog.dismiss(); };
+        page.on('dialog', onDismissDialog);
+        const bubblesBeforeDecline = await page.locator('.chat-bubble').count();
+        await chatInput.fill('hello everyone');
+        if (await sendBtn.count()) await sendBtn.click(); else await chatInput.press('Enter');
+        await page.waitForTimeout(800);
+        page.off('dialog', onDismissDialog);
+        check(/broadcast/i.test(dialogMessage) && /active participant/i.test(dialogMessage), 'broadcast triggers a native confirm() dialog mentioning the active participant count');
+        const declineReply = await page.locator('.chat-bubble').last().innerText().catch(() => '');
+        check(/cancelled/i.test(declineReply), 'dismissing the confirm() dialog cancels the broadcast (reply mentions cancelled)');
+        const bubblesAfterDecline = await page.locator('.chat-bubble').count();
+        check(bubblesAfterDecline === bubblesBeforeDecline + 2, 'declined broadcast still logs the user message + cancellation reply (no roll call side effects)');
+
+        const onAcceptDialog = async (dialog) => { await dialog.accept(); };
+        page.on('dialog', onAcceptDialog);
+        const bubblesBeforeAccept = await page.locator('.chat-bubble').count();
+        await chatInput.fill('hello everyone');
+        if (await sendBtn.count()) await sendBtn.click(); else await chatInput.press('Enter');
+        await page.waitForTimeout(800);
+        page.off('dialog', onAcceptDialog);
+        const acceptReply = await page.locator('.chat-bubble').last().innerText().catch(() => '');
+        check(!/cancelled/i.test(acceptReply), 'accepting the confirm() dialog proceeds with the broadcast (reply does not mention cancelled)');
+        const bubblesAfterAccept = await page.locator('.chat-bubble').count();
+        check(bubblesAfterAccept > bubblesBeforeAccept, 'accepted broadcast appends bubble(s)');
+    }
+
     const chatSearchBox = page.locator('#chatSearchInput');
     if (await chatSearchBox.count()) {
         await chatSearchBox.fill('VEX');

@@ -220,14 +220,14 @@
     }
 
 
-    function startRollCall(message) {
+    function startRollCall(message, meta) {
         if (typeof message !== 'string') message = '';
         message = message.trim() || 'Roll call: report your status.';
         if (DATA.agent.state === 'running') { showToast('warning', '⏳ Roll call already in progress'); return; }
         DATA.agent.state = 'running';
         renderAgentPage();
         showToast('info', '📋 Roll call initiated…');
-        addLog('Roll call started — message: ' + message, 'warning');
+        addLog('Roll call started — message: ' + message, 'warning', meta);
         setTimeout(function () {
             var participants = DATA.participants.slice();
             var activeParticipants = participants.filter(function (p) { return p.status === 'active'; });
@@ -245,7 +245,7 @@
             DATA.agent.lastRun = nowIso;
             DATA.agent.totalRuns += 1;
             DATA.agent.state = 'idle';
-            addLog('Roll call completed — ' + present + '/' + total + ' present (' + rate + '%), ' + (transcript.length - 1) + ' local responses recorded', rate >= 80 ? 'success' : 'warning');
+            addLog('Roll call completed — ' + present + '/' + total + ' present (' + rate + '%), ' + (transcript.length - 1) + ' local responses recorded', rate >= 80 ? 'success' : 'warning', meta);
             saveData(); renderAll();
             showToast('success', '✅ Roll call complete: ' + (transcript.length - 1) + ' responses recorded');
         }, 350);

@@ -99,6 +99,20 @@
         });
     }
 
+    // Synchronous FNV-1a-style hash — extracted from chat-router.js's original makeBroadcastId
+    // so any caller needing a fast, sync, dependency-free content hash (broadcast dedup ids,
+    // command audit hashes) shares one implementation. crypto.subtle.digest is async and doesn't
+    // fit this codebase's synchronous render/command flow, so this stays the one hash primitive.
+    function fnv1aHash(str) {
+        var input = String(str || '');
+        var hash = 2166136261;
+        for (var i = 0; i < input.length; i++) {
+            hash ^= input.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16);
+    }
+
     function debounce(fn, ms) {
         var t;
         return function () { var args = arguments, ctx = this; clearTimeout(t); t = setTimeout(function () { fn.apply(ctx, args); }, ms); };

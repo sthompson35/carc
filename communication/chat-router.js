@@ -26,12 +26,32 @@
 
     function makeBroadcastId(message, atIso) {
         var input = normalizeBroadcastText(message) + '|' + String(atIso || '');
-        var hash = 2166136261;
-        for (var i = 0; i < input.length; i++) {
-            hash ^= input.charCodeAt(i);
-            hash = Math.imul(hash, 16777619);
-        }
-        return 'bc-' + (hash >>> 0).toString(16);
+        return 'bc-' + fnv1aHash(input);
+    }
+
+    // Command risk classification. CARC's real command set has exactly one roster-wide
+    // action today (broadcast) — this stays a minimal two-tier lookup rather than a
+    // pre-populated multi-tier taxonomy with categories nothing in the app can trigger yet.
+    // Keyed by canonical command name, not the raw query text, since tryAgentCommand's
+    // regexes already decide which command fired.
+    var COMMAND_RISK = {
+        MARK_STATUS: 'NORMAL',
+        CREATE_CONVERSATION: 'NORMAL',
+        SET_ALERT_THRESHOLD: 'NORMAL',
+        TOGGLE_AUTO_MODE: 'NORMAL',
+        EXPORT_PARTICIPANTS_CSV: 'NORMAL',
+        EXPORT_DATA: 'NORMAL',
+        BROADCAST: 'ROSTER_WIDE'
+    };
+
+    function classifyCommandRisk(commandName) {
+        return COMMAND_RISK[commandName] || 'NORMAL';
+    }
+
+    // Single point of gating policy: today only ROSTER_WIDE requires confirm(), but if a
+    // future command lands at a higher tier, it flips this one function, not every call site.
+    function requiresApproval(risk) {
+        return risk !== 'NORMAL';
     }
 
 
@@ -125,7 +145,7 @@
             var newStatus = (mark[1] === 'present' || mark[1] === 'active') ? 'active' : 'inactive';
             markTarget.status = newStatus;
             markTarget.lastActive = new Date().toISOString();
-            addLog(markTarget.callsign + ' marked ' + newStatus + ' via Agent Chat', 'info');
+            addLog(markTarget.callsign + ' marked ' + newStatus + ' via Agent Chat', 'info', { correlationId: canaryId('CMD'), risk: classifyCommandRisk('MARK_STATUS'), contentHash: fnv1aHash(query) });
             saveData(); renderAll();
             return markTarget.callsign + ' marked ' + newStatus + '.';
         }
@@ -141,20 +161,20 @@
         if (threshold) {
             var val = Math.max(0, Math.min(100, parseInt(threshold[1], 10)));
             DATA.agent.alertThreshold = val;
-            addLog('Attendance alert threshold set to ' + val + '% via Agent Chat', 'info');
+            addLog('Attendance alert threshold set to ' + val + '% via Agent Chat', 'info', { correlationId: canaryId('CMD'), risk: classifyCommandRisk('SET_ALERT_THRESHOLD'), contentHash: fnv1aHash(query) });
             saveData(); renderAttentionPanel();
             return 'Low-attendance alert threshold set to ' + val + '%.';
         }
 
         if (/\bpause\s+auto(\s+mode)?\b/.test(q)) {
             DATA.agent.autoMode = false;
-            addLog('Agent auto mode paused via Agent Chat', 'info');
+            addLog('Agent auto mode paused via Agent Chat', 'info', { correlationId: canaryId('CMD'), risk: classifyCommandRisk('TOGGLE_AUTO_MODE'), contentHash: fnv1aHash(query) });
             saveData(); renderAgentPage();
             return 'Auto mode paused.';
         }
         if (/\bresume\s+auto(\s+mode)?\b/.test(q)) {
             DATA.agent.autoMode = true;
-            addLog('Agent auto mode resumed via Agent Chat', 'info');
+            addLog('Agent auto mode resumed via Agent Chat', 'info', { correlationId: canaryId('CMD'), risk: classifyCommandRisk('TOGGLE_AUTO_MODE'), contentHash: fnv1aHash(query) });
             saveData(); renderAgentPage();
             return 'Auto mode resumed.';
         }
@@ -178,7 +198,17 @@
         if (DATA.agent.state === 'running') {
             return 'A roll call is already in progress — please wait a moment and try again.';
         }
-        startRollCall(query);
+        var risk = classifyCommandRisk('BROADCAST');
+        var meta = { correlationId: canaryId('CMD'), risk: risk, contentHash: fnv1aHash(query) };
+        if (requiresApproval(risk)) {
+            var activeCount = DATA.participants.filter(function (p) { return p.status === 'active'; }).length;
+            var confirmed = confirm('Broadcast this message to all ' + activeCount + ' active participant(s)? This starts a roll call and records a response for every active identity.');
+            if (!confirmed) {
+                addLog('Broadcast declined at approval gate — command not executed', 'warning', meta);
+                return 'Broadcast cancelled — approval was not confirmed.';
+            }
+        }
+        startRollCall(query, meta);
         return successMsg;
     }
 

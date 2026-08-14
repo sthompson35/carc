@@ -1,8 +1,14 @@
 'use strict';
 // app/activity-log.js
 
-    function addLog(event, status) {
-        DATA.activityLog.unshift({ time: nowTime(), at: new Date().toISOString(), event: event, status: status || 'info' });
+    function addLog(event, status, meta) {
+        var entry = { time: nowTime(), at: new Date().toISOString(), event: event, status: status || 'info' };
+        if (meta) {
+            if (meta.correlationId) entry.correlationId = meta.correlationId;
+            if (meta.risk) entry.risk = meta.risk;
+            if (meta.contentHash) entry.contentHash = meta.contentHash;
+        }
+        DATA.activityLog.unshift(entry);
         if (DATA.activityLog.length > 150) DATA.activityLog = DATA.activityLog.slice(0, 150);
         renderActivityLog();
     }

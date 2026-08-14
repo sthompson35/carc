@@ -123,6 +123,19 @@ function initDb() {
         );
 
         CREATE INDEX IF NOT EXISTS idx_chat_occurred ON chat_messages(occurred_at);
+
+        CREATE TABLE IF NOT EXISTS command_audit_events (
+            id             TEXT    PRIMARY KEY,
+            event          TEXT,
+            status         TEXT,
+            risk           TEXT,
+            content_hash   TEXT,
+            occurred_at    TEXT,
+            synced_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_cmd_audit_occurred ON command_audit_events(occurred_at);
+        CREATE INDEX IF NOT EXISTS idx_cmd_audit_risk     ON command_audit_events(risk);
     `);
 
     // Migration: sync_events predates execution_id (added for cross-referencing a sync

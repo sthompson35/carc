@@ -221,9 +221,11 @@
             var rs = ep.lastRosterSync;
             var rcs = ep.lastRollCallSync;
             var cs = ep.lastChatSync;
+            var cmds = ep.lastCommandSync;
             var rsErr = ep.lastRosterSyncError;
             var rcsErr = ep.lastRollCallSyncError;
             var csErr = ep.lastChatSyncError;
+            var cmdsErr = ep.lastCommandSyncError;
             var as = autoSyncSettings();
             // Stale threshold applies regardless of auto-sync mode: 2x the auto interval while
             // auto-sync is on (a missed cycle should show up quickly), a generous 24h grace
@@ -241,9 +243,10 @@
             var rosterTrust = trustState(rs, rsErr);
             var rcTrust = trustState(rcs, rcsErr);
             var chatTrust = trustState(cs, csErr);
+            var cmdTrust = trustState(cmds, cmdsErr);
             var stateCls = { CURRENT: 'audit-ok', SUCCESS: 'audit-ok', STALE: 'audit-warn', ERROR: 'audit-bad', UNSYNCED: '' };
-            var combinedLastResult = (rosterTrust.lastResult === 'ERROR' || rcTrust.lastResult === 'ERROR' || chatTrust.lastResult === 'ERROR') ? 'ERROR'
-                : (rosterTrust.lastResult === 'SUCCESS' || rcTrust.lastResult === 'SUCCESS' || chatTrust.lastResult === 'SUCCESS') ? 'SUCCESS' : '—';
+            var combinedLastResult = (rosterTrust.lastResult === 'ERROR' || rcTrust.lastResult === 'ERROR' || chatTrust.lastResult === 'ERROR' || cmdTrust.lastResult === 'ERROR') ? 'ERROR'
+                : (rosterTrust.lastResult === 'SUCCESS' || rcTrust.lastResult === 'SUCCESS' || chatTrust.lastResult === 'SUCCESS' || cmdTrust.lastResult === 'SUCCESS') ? 'SUCCESS' : '—';
             epEl.innerHTML =
                 '<div class="kv-row"><span>Endpoint URL</span><b class="text-xs truncate" style="max-width:220px;display:block;">'+esc(ep.url||'—')+'</b></div>'+
                 '<div class="kv-row"><span>Bearer Token</span><b>'+(ep.tokenSet?'•••• configured':'NOT SET')+'</b></div>'+
@@ -251,9 +254,11 @@
                 (rs ? '<div class="kv-row"><span>Roster Sync</span><span class="text-xs">'+esc(rs.synced)+'/'+esc(rs.submitted)+(rs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(rs.syncedAt))+'</span></div>' : '')+
                 (rcs ? '<div class="kv-row"><span>Roll Call Sync</span><span class="text-xs">'+esc(rcs.synced)+'/'+esc(rcs.submitted)+(rcs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(rcs.syncedAt))+'</span></div>' : '')+
                 (cs ? '<div class="kv-row"><span>Chat Sync</span><span class="text-xs">'+esc(cs.synced)+'/'+esc(cs.submitted)+(cs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(cs.syncedAt))+'</span></div>' : '')+
+                (cmds ? '<div class="kv-row"><span>Command Sync</span><span class="text-xs">'+esc(cmds.synced)+'/'+esc(cmds.submitted)+(cmds.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(cmds.syncedAt))+'</span></div>' : '')+
                 '<div class="kv-row"><span>Roster state</span><span class="'+(stateCls[rosterTrust.state]||'')+'">'+rosterTrust.state+'</span></div>'+
                 '<div class="kv-row"><span>Roll-call state</span><span class="'+(stateCls[rcTrust.state]||'')+'">'+rcTrust.state+'</span></div>'+
                 '<div class="kv-row"><span>Chat state</span><span class="'+(stateCls[chatTrust.state]||'')+'">'+chatTrust.state+'</span></div>'+
+                '<div class="kv-row"><span>Command state</span><span class="'+(stateCls[cmdTrust.state]||'')+'">'+cmdTrust.state+'</span></div>'+
                 '<div class="kv-row"><span>Last result</span><span class="'+(stateCls[combinedLastResult]||'')+'">'+combinedLastResult+'</span></div>'+
                 '<div class="kv-row"><span>Next sync</span><span class="text-xs">'+(as.enabled && as.nextAttemptAt ? esc(fmtDate(as.nextAttemptAt)) : 'MANUAL')+'</span></div>'+
                 '<div class="kv-row"><span>Auto-sync</span><label class="text-xs" style="display:flex;align-items:center;gap:5px;cursor:pointer;">'+
@@ -267,6 +272,7 @@
                     '<button class="btn btn-outline btn-sm" id="btnSyncRoster"'+(configured?'':' disabled')+'>🔄 Sync Roster to Runtime</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnSyncRollCalls"'+(configured?'':' disabled')+'>🗓️ Sync Roll Calls to Runtime</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnSyncChat"'+(configured?'':' disabled')+'>💬 Sync Chat to Runtime</button>'+
+                    '<button class="btn btn-outline btn-sm" id="btnSyncCommands"'+(configured?'':' disabled')+'>🛡️ Sync Commands to Runtime</button>'+
                     (configured && (ep.url.startsWith('http://')||ep.url.startsWith('https://')) ? '<a href="'+esc(ep.url)+'/admin" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">🌐 Open Admin</a>' : '')+
                 '</div>'+
                 '<div class="text-xs text-muted mt-1">Bearer token is stored in browser localStorage only — never included in evidence exports. Auto-sync mutates runtime state on a timer once enabled — off by default.</div>';
@@ -276,6 +282,7 @@
             if (configured) document.getElementById('btnSyncRoster').addEventListener('click', function(){ syncRosterToRuntime(); });
             if (configured) document.getElementById('btnSyncRollCalls').addEventListener('click', function(){ syncRollCallsToRuntime(); });
             if (configured) document.getElementById('btnSyncChat').addEventListener('click', function(){ syncChatToRuntime(); });
+            if (configured) document.getElementById('btnSyncCommands').addEventListener('click', function(){ syncChatCommandsToRuntime(); });
             document.getElementById('chkAutoSync').addEventListener('change', function(e){ toggleAutoSync(e.target.checked); });
         }
         var vrEl = document.getElementById('govVerificationResponse');
@@ -500,6 +507,55 @@
     }
 
 
+    function syncChatCommandsToRuntime(opts) {
+        opts = opts || {};
+        var initiator = opts.initiator === 'auto' ? 'auto' : 'manual';
+        var silent = !!opts.silent;
+        var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (!ep.url) { if (!silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ ok:false, error:'NO_ENDPOINT' }); }
+        var records = (DATA.activityLog || []).filter(function(e) { return e.correlationId; }).map(function(e) {
+            return { id: e.correlationId, event: e.event, status: e.status, risk: e.risk || 'NORMAL', contentHash: e.contentHash, occurredAt: e.at };
+        });
+        // Unlike roster/roll-calls/chat, which always have seeded data, the command-audit trail
+        // starts genuinely empty until a chat command is issued — an idle install could have zero
+        // entries for a long time. That's not a real failure, so it must not count toward the
+        // auto-sync failure streak (which would otherwise silently disable auto-sync entirely
+        // after 5 idle cycles even though roster/roll-calls/chat sync is working fine).
+        if (!records.length) {
+            if (!silent) { showToast('error', '❌ No command-audit events to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
+            return Promise.resolve({ ok:true, skipped:true, error:'NO_RECORDS' });
+        }
+        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        var base = ep.url.replace(/\/+$/, '');
+        var btn = silent ? null : document.getElementById('btnSyncCommands');
+        if (btn) { btn.disabled = true; btn.textContent = '…'; }
+        var ctrl = new AbortController();
+        var tid = setTimeout(function(){ ctrl.abort(); }, 15000);
+        return fetch(base + '/api/commands/sync', { method:'POST', headers:headers, body: JSON.stringify({ records: records, initiator: initiator }), signal: ctrl.signal })
+            .then(function(r) { return r.json().then(function(d){ return { ok:r.ok, status:r.status, data:d }; }); })
+            .then(function(res) {
+                clearTimeout(tid);
+                if (!res.ok) throw new Error((res.data && (res.data.reason || res.data.error)) || ('HTTP ' + res.status));
+                ep.lastCommandSync = { syncedAt: res.data.syncedAt, synced: res.data.synced, submitted: res.data.submitted, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Command audit sync → ' + res.data.inserted + ' inserted, ' + res.data.updated + ' updated, ' + res.data.unchanged + ' unchanged');
+                saveData(); renderGovernancePage();
+                if (!silent) showToast('success', '✅ Synced ' + res.data.synced + '/' + res.data.submitted + ' command-audit event(s)');
+                return { ok:true, data:res.data };
+            })
+            .catch(function(err) {
+                clearTimeout(tid);
+                var msg = (err && err.name === 'AbortError') ? 'timeout after 15s' : (err.message || 'network error');
+                ep.lastCommandSyncError = { at: new Date().toISOString(), message: msg, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Command audit sync failed: ' + msg);
+                saveData(); renderGovernancePage();
+                if (!silent) showToast('error', '❌ Command audit sync failed: ' + msg);
+                return { ok:false, error:msg };
+            });
+    }
+
+
     function syncRosterToRuntime(opts) {
         opts = opts || {};
         var initiator = opts.initiator === 'auto' ? 'auto' : 'manual';
@@ -576,7 +632,8 @@
         Promise.all([
             syncRosterToRuntime({ initiator: 'auto', silent: true }),
             syncRollCallsToRuntime({ initiator: 'auto', silent: true }),
-            syncChatToRuntime({ initiator: 'auto', silent: true })
+            syncChatToRuntime({ initiator: 'auto', silent: true }),
+            syncChatCommandsToRuntime({ initiator: 'auto', silent: true })
         ]).then(function(results) {
             var failed = results.filter(function(r) { return !r.ok; });
             if (failed.length) {
