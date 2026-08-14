@@ -49,6 +49,35 @@ export default async function run(page) {
     await searchBox.fill('');
     await page.waitForTimeout(300);
 
+    // Knowledge Path Registry: open a participant, exercise the evidence-gated checklist
+    {
+        await page.locator('button[data-act="view"]').first().click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const kpCards = page.locator('#modalBody .gate-item');
+        check((await kpCards.count()) === 10, 'participant detail modal renders exactly 10 knowledge-path stage cards');
+        const firstBadgeText = await kpCards.first().locator('.badge').innerText().catch(() => '');
+        check(firstBadgeText === 'PENDING', 'a fresh participant\'s first knowledge-path stage starts PENDING');
+
+        await kpCards.first().locator('.kp-evidence-edit').click({ timeout: 5000 });
+        await page.waitForTimeout(300);
+        // Reject: VERIFIED with no evidence/verifier
+        await page.locator('#kpStatus').selectOption('VERIFIED');
+        await page.locator('#kpSave').click({ timeout: 5000 });
+        await page.waitForTimeout(300);
+        const stillOpen = await page.locator('#kpSave').count();
+        check(stillOpen > 0, 'saving VERIFIED with empty evidence/verifier is rejected (modal stays open, no toast success)');
+
+        // Accept: fill evidence + verifier, save
+        await page.locator('#kpEvidence').fill('e2e evidence reference');
+        await page.locator('#kpVerifier').fill('e2e verifier');
+        await page.locator('#kpSave').click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const reopenedBadge = await page.locator('#modalBody .gate-item').first().locator('.badge').innerText().catch(() => '');
+        check(reopenedBadge === 'VERIFIED', 'saved evidence+verifier flips the stage to VERIFIED and the reopened modal reflects it');
+        await page.locator('#pdClose').click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(200);
+    }
+
     // Agent Chat: targeted + multi-target messages, search
     await page.locator('.nav-link[data-route="agent"]').first().click({ timeout: 5000 });
     await page.waitForTimeout(300);
@@ -132,6 +161,11 @@ export default async function run(page) {
     await page.locator('.nav-link[data-route="governance"]').first().click({ timeout: 5000 });
     await page.waitForTimeout(400);
     check((await page.locator('#page-governance').getAttribute('hidden')) === null, 'governance page renders and is visible');
+
+    const kpBadgeText = await page.locator('#kpRegistryBadge').innerText().catch(() => '');
+    check(/^\d+\/66 complete$/.test(kpBadgeText), 'governance page shows a real N/66 knowledge-path completion badge (' + kpBadgeText + ')');
+    const kpBreakdownRows = await page.locator('#kpStageBreakdown .chart-bar').count();
+    check(kpBreakdownRows === 10, 'governance page renders a 10-row knowledge-path stage breakdown');
 
     await page.locator('.nav-link[data-route="admin"]').first().click({ timeout: 5000 });
     await page.waitForTimeout(300);

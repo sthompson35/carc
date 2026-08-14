@@ -834,6 +834,12 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                         <div id="govAuditBody"></div>
                     </div>
                 </div>
+                <div class="panel">
+                    <div class="panel-header"><div class="panel-title">🧭 Knowledge Path Registry</div><span class="badge" id="kpRegistryBadge">—</span></div>
+                    <div class="progress-track"><div class="progress-fill" id="kpRegistryProgress" style="width:0%"></div></div>
+                    <div class="text-xs text-muted mt-1" id="kpRegistrySummary"></div>
+                    <div class="mt-2" id="kpStageBreakdown"></div>
+                </div>
                 <div class="two-col">
                     <div class="panel">
                         <div class="panel-header">
@@ -1170,6 +1176,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
 <script src="data/roster.js"></script>
 <script src="persona/mission-doctrine.js"></script>
 <script src="persona/identity.js"></script>
+<script src="persona/knowledge-path.js"></script>
 <script src="persona/chat-persona.js"></script>
 <script src="schemas/migrate.js"></script>
 <script src="data/seed.js"></script>

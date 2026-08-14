@@ -270,6 +270,22 @@
                 text:'CARC v3.22.0 corrected a conflation bug: individual readiness and per-identity production verification were derived from the global governance gate alone, so all 66 identities would falsely inherit MISSION_READY/PRODUCTION_VERIFIED the moment the system-wide gate completed, regardless of whether that specific identity had ever been through a runtime canary. Readiness now defaults to READINESS_UNKNOWN and requires structural evidence (canonical identity, mission profile, active status, registry integrity) to reach MISSION_READY; PRODUCTION_VERIFIED additionally requires an individually runtime-verified canary execution for that exact identity.'
             });
         }
-        d.schemaVersion = 16;
+        if ((d.schemaVersion || 0) < 17) {
+            // Migration-safe: only touches the local `d` parameter (see the v16 comment above —
+            // buildDefaultKnowledgePath() never reads global DATA). Never overwrites existing
+            // progress — only backfills participants that don't already have a knowledgePath.
+            d.participants.forEach(function (p) {
+                if (!p.serviceMemberId) return;
+                if (!p.knowledgePath) p.knowledgePath = buildDefaultKnowledgePath();
+            });
+            d.governance.release = 'CARC v3.23.0 — Canonical Knowledge-Path Registry';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({
+                time:new Date().toISOString(),
+                type:'architecture',
+                text:'CARC v3.23.0 added a canonical knowledge-path registry: every controlled identity now carries an honest, per-identity 10-stage pipeline (competencies → curriculum modules → governed sources → tools → permissions → exercises → assessment → certification → mission eligibility → review acknowledgement). Each stage starts PENDING and requires genuine evidence and a named verifier to reach VERIFIED — mission eligibility is the one exception, computed automatically from the 8 prerequisite stages rather than manually attested. No content is pre-filled; the pipeline starts empty for all 66 identities.'
+            });
+        }
+        d.schemaVersion = 17;
         return d;
     }

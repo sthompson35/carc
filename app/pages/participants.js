@@ -221,6 +221,20 @@
                 '<div class="mt-1"><b>Operating Doctrine</b><div class="text-xs text-muted">' + esc(Object.keys(p.missionProfile.operatingDoctrine).map(function(k){return p.missionProfile.operatingDoctrine[k];}).join(' ')) + '</div></div>' +
                 '<div class="mt-1"><b>Production Rule</b><div class="text-xs text-muted">' + esc(p.missionProfile.productionRule) + '</div></div>' +
                 '</div>' : '') +
+            (p.knowledgePath ? (function () {
+                var kpState = evaluateKnowledgePathState(p);
+                return '<div class="mt-2"><strong class="text-sm">Knowledge Path (' + kpState.verified + '/' + kpState.total + ')</strong>' +
+                    '<div class="progress-track mt-1"><div class="progress-fill" style="width:' + kpState.percent + '%"></div></div>' +
+                    '<div class="gate-grid mt-2">' + kpState.stages.map(function (s) {
+                        var cls = s.status === 'VERIFIED' ? 'badge-active' : 'badge-inactive';
+                        var isComputed = s.id === 'mission_eligibility';
+                        var btnLabel = isComputed ? 'View (Computed)' : (s.status === 'VERIFIED' ? 'Review Evidence' : 'Record Evidence');
+                        return '<div class="gate-item"><div class="gate-head"><div class="gate-name">' + esc(s.name) + (isComputed ? ' <span class="text-xs text-muted">⚙️</span>' : '') + '</div><span class="badge ' + cls + '">' + esc(s.status) + '</span></div>' +
+                            '<div class="gate-desc">' + esc(s.description) + '</div>' +
+                            '<div class="gate-meta">Evidence: ' + esc(s.evidence || 'NOT RECORDED') + '<br>Verifier: ' + esc(s.verifier || 'NOT RECORDED') + '</div>' +
+                            '<div class="mt-1"><button class="btn btn-outline btn-sm kp-evidence-edit" data-pid="' + esc(p.id) + '" data-sid="' + esc(s.id) + '">' + btnLabel + '</button></div></div>';
+                    }).join('') + '</div></div>';
+            })() : '') +
             '<div class="mt-2"><strong class="text-sm">Conversations (' + relatedConvs.length + ')</strong><div class="mt-1">' +
             (relatedConvs.length ? relatedConvs.map(function (c) { return '<span class="chip conv-detail-open" data-id="' + c.id + '" style="cursor:pointer;">' + esc(c.title) + '</span>'; }).join('') : '<span class="text-muted text-sm">No conversations yet</span>') +
             '</div></div>';
@@ -234,6 +248,49 @@
                 navigate('conversations');
                 setTimeout(function () { openConversationDetail(chipEl.getAttribute('data-id')); }, 50);
             });
+        });
+        $all('.kp-evidence-edit').forEach(function (btn) {
+            btn.addEventListener('click', function () { openKnowledgePathEvidenceModal(btn.getAttribute('data-pid'), btn.getAttribute('data-sid')); });
+        });
+    }
+
+    function openKnowledgePathEvidenceModal(participantId, stageId) {
+        var p = DATA.participants.find(function (x) { return x.id === participantId; });
+        if (!p || !p.knowledgePath) return;
+        var stage = p.knowledgePath.stages.find(function (s) { return s.id === stageId; });
+        if (!stage) return;
+        if (stage.id === 'mission_eligibility') {
+            var result = evaluateMissionEligibilityStage(p);
+            var roBody = '<div class="form-group"><label>Stage</label><input value="' + esc(stage.name) + '" disabled></div>' +
+                '<p class="text-sm">This stage is <b>computed</b> — it cannot be self-attested. It reflects whether all 8 prerequisite knowledge-path stages are VERIFIED for this identity.</p>' +
+                '<div class="kv-row"><span>Current Status</span><span class="badge ' + (stage.status === 'VERIFIED' ? 'badge-active' : 'badge-inactive') + '">' + esc(stage.status) + '</span></div>' +
+                '<div class="kv-row"><span>Basis</span><span class="text-xs">' + esc(stage.reason || result.reason) + '</span></div>' +
+                '<p class="text-xs text-muted mt-2">To change this: record evidence and a verifier for each of the 8 prerequisite stages above.</p>';
+            openModal('Knowledge Path — ' + stage.name, roBody, '<button class="btn btn-outline" id="kpCancel">Close</button>');
+            document.getElementById('kpCancel').addEventListener('click', closeModal);
+            return;
+        }
+        var body = '<div class="form-group"><label>Stage</label><input value="' + esc(stage.name) + '" disabled></div>' +
+            '<div class="form-group"><label>Evidence Reference</label><textarea id="kpEvidence" rows="4" placeholder="Curriculum ID, exam score reference, certificate ID, approval record…">' + esc(stage.evidence || '') + '</textarea></div>' +
+            '<div class="form-group"><label>Verifier</label><input id="kpVerifier" value="' + esc(stage.verifier || '') + '" placeholder="e.g. instructor, supervisor, reviewer ID"></div>' +
+            '<div class="form-group"><label>Status</label><select id="kpStatus"><option value="PENDING">PENDING</option><option value="VERIFIED">VERIFIED</option></select></div>' +
+            '<div class="text-xs text-muted">VERIFIED requires both an evidence reference and a verifier. CARC will not accept a bare status flip.</div>';
+        var footer = '<button class="btn btn-outline" id="kpCancel">Cancel</button><button class="btn btn-primary" id="kpSave">Save Evidence</button>';
+        openModal('Knowledge Path — ' + stage.name, body, footer);
+        document.getElementById('kpStatus').value = stage.status;
+        document.getElementById('kpCancel').addEventListener('click', closeModal);
+        document.getElementById('kpSave').addEventListener('click', function () {
+            var ev = document.getElementById('kpEvidence').value.trim();
+            var vr = document.getElementById('kpVerifier').value.trim();
+            var st = document.getElementById('kpStatus').value;
+            if (st === 'VERIFIED' && (!ev || !vr)) { showToast('error', '❌ VERIFIED requires evidence and a verifier'); return; }
+            stage.evidence = ev; stage.verifier = vr; stage.status = st; stage.updatedAt = new Date().toISOString();
+            reconcileKnowledgePathEligibility(p);
+            addLog(p.name + ' knowledge path · ' + stage.name + ' → ' + st, 'info');
+            saveData(); renderAll();
+            closeModal();
+            openParticipantDetail(participantId);
+            showToast('success', '✅ Knowledge path evidence saved');
         });
     }
 

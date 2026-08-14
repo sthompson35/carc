@@ -70,12 +70,29 @@
         document.getElementById('govKpis').innerHTML = [
             ['Canonical Identities',gate.registry.controlled+'/'+(DATA.governance.canonicalRosterExpected||66)],['Integrity Issues',gate.registry.issues.length],['Verified Gates',gate.verified+'/'+gate.total],['Production State',DATA.governance.productionState],['Lifecycle',DATA.governance.lifecycle],['Schema','v'+DATA.schemaVersion]
         ].map(function(k){return '<div class="stat-card"><div class="label">'+esc(k[0])+'</div><div class="value" style="font-size:1.15rem">'+esc(k[1])+'</div></div>';}).join('');
+        renderKnowledgePathSummary();
         renderRuntimeCanary();
         renderCanarySweepSummary();
         renderCanaryHistory();
         renderExternalRuntime();
         var ledger=(DATA.governance.ledger||[]).slice(0,30);
         document.getElementById('govLedger').innerHTML = ledger.map(function(x){return '<div class="log-item"><span class="log-time">'+esc(fmtDate(x.time))+'</span><span class="log-event">'+esc(x.text)+'</span><span class="log-status info">'+esc(x.type)+'</span></div>';}).join('') || '<div class="text-muted text-sm">No governance ledger entries.</div>';
+    }
+
+    // Not a per-identity failing-list (unlike renderCanarySweepSummary, which lists failing
+    // identities because sweeps normally mostly pass) — the knowledge-path registry starts 100%
+    // empty for all 66 identities on day one, so a per-identity list would be 66 near-identical
+    // lines and stay low-value even at partial adoption. A fixed 10-row stage breakdown answers
+    // "which stage is the bottleneck" without that.
+    function renderKnowledgePathSummary() {
+        var badge = document.getElementById('kpRegistryBadge');
+        if (!badge) return;
+        var state = knowledgePathRegistryState();
+        badge.textContent = state.complete + '/' + state.total + ' complete';
+        badge.className = 'badge ' + (state.total && state.complete === state.total ? 'badge-active' : 'badge-inactive');
+        document.getElementById('kpRegistryProgress').style.width = state.percent + '%';
+        document.getElementById('kpRegistrySummary').innerHTML = '<b class="' + (state.total && state.complete === state.total ? 'audit-ok' : 'audit-bad') + '">' + state.complete + ' / ' + state.total + '</b> identities have completed all 10 knowledge-path stages';
+        renderBarList('kpStageBreakdown', state.stageBreakdown.map(function (s) { return { label: s.name, value: s.verified, display: s.verified + '/' + state.total }; }), { colorFn: function () { return 'purple'; } });
     }
 
     function openGovernanceEvidenceModal(id) {
