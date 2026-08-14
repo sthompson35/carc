@@ -223,10 +223,14 @@
             var rcs = ep.lastRollCallSync;
             var cs = ep.lastChatSync;
             var cmds = ep.lastCommandSync;
+            var tks = ep.lastTaskSync;
+            var hos = ep.lastHandoffSync;
             var rsErr = ep.lastRosterSyncError;
             var rcsErr = ep.lastRollCallSyncError;
             var csErr = ep.lastChatSyncError;
             var cmdsErr = ep.lastCommandSyncError;
+            var tksErr = ep.lastTaskSyncError;
+            var hosErr = ep.lastHandoffSyncError;
             var as = autoSyncSettings();
             // Stale threshold applies regardless of auto-sync mode: 2x the auto interval while
             // auto-sync is on (a missed cycle should show up quickly), a generous 24h grace
@@ -245,9 +249,11 @@
             var rcTrust = trustState(rcs, rcsErr);
             var chatTrust = trustState(cs, csErr);
             var cmdTrust = trustState(cmds, cmdsErr);
+            var taskTrust = trustState(tks, tksErr);
+            var handoffTrust = trustState(hos, hosErr);
             var stateCls = { CURRENT: 'audit-ok', SUCCESS: 'audit-ok', STALE: 'audit-warn', ERROR: 'audit-bad', UNSYNCED: '' };
-            var combinedLastResult = (rosterTrust.lastResult === 'ERROR' || rcTrust.lastResult === 'ERROR' || chatTrust.lastResult === 'ERROR' || cmdTrust.lastResult === 'ERROR') ? 'ERROR'
-                : (rosterTrust.lastResult === 'SUCCESS' || rcTrust.lastResult === 'SUCCESS' || chatTrust.lastResult === 'SUCCESS' || cmdTrust.lastResult === 'SUCCESS') ? 'SUCCESS' : '—';
+            var combinedLastResult = (rosterTrust.lastResult === 'ERROR' || rcTrust.lastResult === 'ERROR' || chatTrust.lastResult === 'ERROR' || cmdTrust.lastResult === 'ERROR' || taskTrust.lastResult === 'ERROR' || handoffTrust.lastResult === 'ERROR') ? 'ERROR'
+                : (rosterTrust.lastResult === 'SUCCESS' || rcTrust.lastResult === 'SUCCESS' || chatTrust.lastResult === 'SUCCESS' || cmdTrust.lastResult === 'SUCCESS' || taskTrust.lastResult === 'SUCCESS' || handoffTrust.lastResult === 'SUCCESS') ? 'SUCCESS' : '—';
             epEl.innerHTML =
                 '<div class="kv-row"><span>Endpoint URL</span><b class="text-xs truncate" style="max-width:220px;display:block;">'+esc(ep.url||'—')+'</b></div>'+
                 '<div class="kv-row"><span>Bearer Token</span><b>'+(ep.tokenSet?'•••• configured':'NOT SET')+'</b></div>'+
@@ -256,10 +262,14 @@
                 (rcs ? '<div class="kv-row"><span>Roll Call Sync</span><span class="text-xs">'+esc(rcs.synced)+'/'+esc(rcs.submitted)+(rcs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(rcs.syncedAt))+'</span></div>' : '')+
                 (cs ? '<div class="kv-row"><span>Chat Sync</span><span class="text-xs">'+esc(cs.synced)+'/'+esc(cs.submitted)+(cs.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(cs.syncedAt))+'</span></div>' : '')+
                 (cmds ? '<div class="kv-row"><span>Command Sync</span><span class="text-xs">'+esc(cmds.synced)+'/'+esc(cmds.submitted)+(cmds.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(cmds.syncedAt))+'</span></div>' : '')+
+                (tks ? '<div class="kv-row"><span>Task Sync</span><span class="text-xs">'+esc(tks.synced)+'/'+esc(tks.submitted)+(tks.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(tks.syncedAt))+'</span></div>' : '')+
+                (hos ? '<div class="kv-row"><span>Handoff Sync</span><span class="text-xs">'+esc(hos.synced)+'/'+esc(hos.submitted)+(hos.initiator==='auto'?' [auto]':'')+' · '+esc(fmtDate(hos.syncedAt))+'</span></div>' : '')+
                 '<div class="kv-row"><span>Roster state</span><span class="'+(stateCls[rosterTrust.state]||'')+'">'+rosterTrust.state+'</span></div>'+
                 '<div class="kv-row"><span>Roll-call state</span><span class="'+(stateCls[rcTrust.state]||'')+'">'+rcTrust.state+'</span></div>'+
                 '<div class="kv-row"><span>Chat state</span><span class="'+(stateCls[chatTrust.state]||'')+'">'+chatTrust.state+'</span></div>'+
                 '<div class="kv-row"><span>Command state</span><span class="'+(stateCls[cmdTrust.state]||'')+'">'+cmdTrust.state+'</span></div>'+
+                '<div class="kv-row"><span>Task state</span><span class="'+(stateCls[taskTrust.state]||'')+'">'+taskTrust.state+'</span></div>'+
+                '<div class="kv-row"><span>Handoff state</span><span class="'+(stateCls[handoffTrust.state]||'')+'">'+handoffTrust.state+'</span></div>'+
                 '<div class="kv-row"><span>Last result</span><span class="'+(stateCls[combinedLastResult]||'')+'">'+combinedLastResult+'</span></div>'+
                 '<div class="kv-row"><span>Next sync</span><span class="text-xs">'+(as.enabled && as.nextAttemptAt ? esc(fmtDate(as.nextAttemptAt)) : 'MANUAL')+'</span></div>'+
                 '<div class="kv-row"><span>Auto-sync</span><label class="text-xs" style="display:flex;align-items:center;gap:5px;cursor:pointer;">'+
@@ -274,6 +284,8 @@
                     '<button class="btn btn-outline btn-sm" id="btnSyncRollCalls"'+(configured?'':' disabled')+'>🗓️ Sync Roll Calls to Runtime</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnSyncChat"'+(configured?'':' disabled')+'>💬 Sync Chat to Runtime</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnSyncCommands"'+(configured?'':' disabled')+'>🛡️ Sync Commands to Runtime</button>'+
+                    '<button class="btn btn-outline btn-sm" id="btnSyncTasks"'+(configured?'':' disabled')+'>🗂️ Sync Tasks to Runtime</button>'+
+                    '<button class="btn btn-outline btn-sm" id="btnSyncHandoffs"'+(configured?'':' disabled')+'>🤝 Sync Handoffs to Runtime</button>'+
                     (configured && (ep.url.startsWith('http://')||ep.url.startsWith('https://')) ? '<a href="'+esc(ep.url)+'/admin" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">🌐 Open Admin</a>' : '')+
                 '</div>'+
                 '<div class="text-xs text-muted mt-1">Bearer token is stored in browser localStorage only — never included in evidence exports. Auto-sync mutates runtime state on a timer once enabled — off by default.</div>';
@@ -284,6 +296,8 @@
             if (configured) document.getElementById('btnSyncRollCalls').addEventListener('click', function(){ syncRollCallsToRuntime(); });
             if (configured) document.getElementById('btnSyncChat').addEventListener('click', function(){ syncChatToRuntime(); });
             if (configured) document.getElementById('btnSyncCommands').addEventListener('click', function(){ syncChatCommandsToRuntime(); });
+            if (configured) document.getElementById('btnSyncTasks').addEventListener('click', function(){ syncTasksToRuntime(); });
+            if (configured) document.getElementById('btnSyncHandoffs').addEventListener('click', function(){ syncHandoffsToRuntime(); });
             document.getElementById('chkAutoSync').addEventListener('change', function(e){ toggleAutoSync(e.target.checked); });
         }
         var vrEl = document.getElementById('govVerificationResponse');
@@ -597,6 +611,96 @@
             });
     }
 
+    function syncTasksToRuntime(opts) {
+        opts = opts || {};
+        var initiator = opts.initiator === 'auto' ? 'auto' : 'manual';
+        var silent = !!opts.silent;
+        var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (!ep.url) { if (!silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ ok:false, error:'NO_ENDPOINT' }); }
+        var records = (DATA.tasks || []).map(function(t) {
+            return { taskId: t.taskId, ownerServiceMemberId: t.ownerServiceMemberId, assignedByServiceMemberId: t.assignedByServiceMemberId, title: t.title, description: t.description, sourceMissionTaskText: t.sourceMissionTaskText, state: t.state, createdAt: t.createdAt, updatedAt: t.updatedAt };
+        });
+        // Unlike roster/roll-calls/chat, which always have seeded data, tasks start genuinely
+        // empty until one is created — same non-failure "skipped" handling as command-audit sync,
+        // so an idle install doesn't silently disable auto-sync after 5 empty cycles.
+        if (!records.length) {
+            if (!silent) { showToast('error', '❌ No tasks to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
+            return Promise.resolve({ ok:true, skipped:true, error:'NO_RECORDS' });
+        }
+        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        var base = ep.url.replace(/\/+$/, '');
+        var btn = silent ? null : document.getElementById('btnSyncTasks');
+        if (btn) { btn.disabled = true; btn.textContent = '…'; }
+        var ctrl = new AbortController();
+        var tid = setTimeout(function(){ ctrl.abort(); }, 15000);
+        return fetch(base + '/api/tasks/sync', { method:'POST', headers:headers, body: JSON.stringify({ records: records, initiator: initiator }), signal: ctrl.signal })
+            .then(function(r) { return r.json().then(function(d){ return { ok:r.ok, status:r.status, data:d }; }); })
+            .then(function(res) {
+                clearTimeout(tid);
+                if (!res.ok) throw new Error((res.data && (res.data.reason || res.data.error)) || ('HTTP ' + res.status));
+                ep.lastTaskSync = { syncedAt: res.data.syncedAt, synced: res.data.synced, submitted: res.data.submitted, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Task sync → ' + res.data.inserted + ' inserted, ' + res.data.updated + ' updated, ' + res.data.unchanged + ' unchanged');
+                saveData(); renderGovernancePage();
+                if (!silent) showToast('success', '✅ Synced ' + res.data.synced + '/' + res.data.submitted + ' task(s)');
+                return { ok:true, data:res.data };
+            })
+            .catch(function(err) {
+                clearTimeout(tid);
+                var msg = (err && err.name === 'AbortError') ? 'timeout after 15s' : (err.message || 'network error');
+                ep.lastTaskSyncError = { at: new Date().toISOString(), message: msg, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Task sync failed: ' + msg);
+                saveData(); renderGovernancePage();
+                if (!silent) showToast('error', '❌ Task sync failed: ' + msg);
+                return { ok:false, error:msg };
+            });
+    }
+
+
+    function syncHandoffsToRuntime(opts) {
+        opts = opts || {};
+        var initiator = opts.initiator === 'auto' ? 'auto' : 'manual';
+        var silent = !!opts.silent;
+        var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (!ep.url) { if (!silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ ok:false, error:'NO_ENDPOINT' }); }
+        var records = (DATA.handoffs || []).map(function(h) {
+            return { handoffId: h.handoffId, taskId: h.taskId, fromServiceMemberId: h.fromServiceMemberId, toServiceMemberId: h.toServiceMemberId, notes: h.notes, state: h.state, createdAt: h.createdAt, updatedAt: h.updatedAt };
+        });
+        if (!records.length) {
+            if (!silent) { showToast('error', '❌ No handoffs to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
+            return Promise.resolve({ ok:true, skipped:true, error:'NO_RECORDS' });
+        }
+        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        var base = ep.url.replace(/\/+$/, '');
+        var btn = silent ? null : document.getElementById('btnSyncHandoffs');
+        if (btn) { btn.disabled = true; btn.textContent = '…'; }
+        var ctrl = new AbortController();
+        var tid = setTimeout(function(){ ctrl.abort(); }, 15000);
+        return fetch(base + '/api/handoffs/sync', { method:'POST', headers:headers, body: JSON.stringify({ records: records, initiator: initiator }), signal: ctrl.signal })
+            .then(function(r) { return r.json().then(function(d){ return { ok:r.ok, status:r.status, data:d }; }); })
+            .then(function(res) {
+                clearTimeout(tid);
+                if (!res.ok) throw new Error((res.data && (res.data.reason || res.data.error)) || ('HTTP ' + res.status));
+                ep.lastHandoffSync = { syncedAt: res.data.syncedAt, synced: res.data.synced, submitted: res.data.submitted, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Handoff sync → ' + res.data.inserted + ' inserted, ' + res.data.updated + ' updated, ' + res.data.unchanged + ' unchanged');
+                saveData(); renderGovernancePage();
+                if (!silent) showToast('success', '✅ Synced ' + res.data.synced + '/' + res.data.submitted + ' handoff(s)');
+                return { ok:true, data:res.data };
+            })
+            .catch(function(err) {
+                clearTimeout(tid);
+                var msg = (err && err.name === 'AbortError') ? 'timeout after 15s' : (err.message || 'network error');
+                ep.lastHandoffSyncError = { at: new Date().toISOString(), message: msg, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Handoff sync failed: ' + msg);
+                saveData(); renderGovernancePage();
+                if (!silent) showToast('error', '❌ Handoff sync failed: ' + msg);
+                return { ok:false, error:msg };
+            });
+    }
+
     // ---- Auto-sync: feature-flagged, off by default, with exponential backoff on failure ----
 
     var autoSyncTimer = null;
@@ -634,7 +738,9 @@
             syncRosterToRuntime({ initiator: 'auto', silent: true }),
             syncRollCallsToRuntime({ initiator: 'auto', silent: true }),
             syncChatToRuntime({ initiator: 'auto', silent: true }),
-            syncChatCommandsToRuntime({ initiator: 'auto', silent: true })
+            syncChatCommandsToRuntime({ initiator: 'auto', silent: true }),
+            syncTasksToRuntime({ initiator: 'auto', silent: true }),
+            syncHandoffsToRuntime({ initiator: 'auto', silent: true })
         ]).then(function(results) {
             var failed = results.filter(function(r) { return !r.ok; });
             if (failed.length) {

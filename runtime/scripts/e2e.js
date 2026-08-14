@@ -385,8 +385,71 @@ async function run() {
     db.prepare('DELETE FROM command_audit_events WHERE id = ?').run(cmdId);
     console.log('     command audit test record cleaned up (sync_events audit rows intentionally left — append-only trail)');
 
-    // ── 17. revoke temp token; confirm 403 ───────────────────────
-    console.log('\n[17] Revoke temp token → confirm 403');
+    // ── 17. task + handoff sync round-trip ────────────────────────
+    console.log('\n[17] Task + Handoff sync round-trip');
+    const taskId = 'TASK-E2E-' + Date.now();
+    const taskCreatedAt = new Date().toISOString();
+    t = await authReq(port, '/api/tasks/sync', 'POST', tmpToken, {
+        records: [{ taskId: taskId, ownerServiceMemberId: 'ATA-VEX-000', assignedByServiceMemberId: '', title: 'e2e task drill', description: '', sourceMissionTaskText: '', state: 'ASSIGNED', createdAt: taskCreatedAt, updatedAt: taskCreatedAt }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.synced === 1 && data.inserted === 1, 'POST /api/tasks/sync → 1 record inserted');
+    assert(typeof data.executionId === 'string' && data.executionId.startsWith('SYNC-TASKS-'), 'task sync response carries a tasks-scoped executionId');
+
+    t = await authReq(port, '/api/tasks?limit=100', 'GET', tmpToken);
+    data = t.json();
+    const taskRow = (data.rows || []).find(r => r.taskId === taskId);
+    assert(!!taskRow && taskRow.ownerServiceMemberId === 'ATA-VEX-000' && taskRow.state === 'ASSIGNED', 'GET /api/tasks reflects the synced record');
+
+    // idempotency
+    t = await authReq(port, '/api/tasks/sync', 'POST', tmpToken, {
+        records: [{ taskId: taskId, ownerServiceMemberId: 'ATA-VEX-000', assignedByServiceMemberId: '', title: 'e2e task drill', description: '', sourceMissionTaskText: '', state: 'ASSIGNED', createdAt: taskCreatedAt, updatedAt: taskCreatedAt }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.inserted === 0 && data.updated === 0 && data.unchanged === 1, 'repeat task sync → 0 inserted, 0 updated, 1 unchanged (idempotent)');
+    const taskCountAfter = db.prepare('SELECT COUNT(*) AS n FROM tasks WHERE id = ?').get(taskId).n;
+    assert(taskCountAfter === 1, 'repeat task sync does not duplicate the row');
+
+    // a real state transition round-trips as an update, not a phantom insert
+    t = await authReq(port, '/api/tasks/sync', 'POST', tmpToken, {
+        records: [{ taskId: taskId, ownerServiceMemberId: 'ATA-VEX-000', assignedByServiceMemberId: '', title: 'e2e task drill', description: '', sourceMissionTaskText: '', state: 'ACKNOWLEDGED', createdAt: taskCreatedAt, updatedAt: new Date().toISOString() }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.inserted === 0 && data.updated === 1, 'a real state transition syncs as an update');
+
+    const handoffId = 'HANDOFF-E2E-' + Date.now();
+    const handoffCreatedAt = new Date().toISOString();
+    t = await authReq(port, '/api/handoffs/sync', 'POST', tmpToken, {
+        records: [{ handoffId: handoffId, taskId: taskId, fromServiceMemberId: 'ATA-VEX-000', toServiceMemberId: 'ATA-MAPE-000', notes: 'e2e handoff drill', state: 'CREATED', createdAt: handoffCreatedAt, updatedAt: handoffCreatedAt }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.synced === 1 && data.inserted === 1, 'POST /api/handoffs/sync → 1 record inserted');
+    assert(typeof data.executionId === 'string' && data.executionId.startsWith('SYNC-HANDOFFS-'), 'handoff sync response carries a handoffs-scoped executionId');
+
+    t = await authReq(port, '/api/handoffs?limit=100', 'GET', tmpToken);
+    data = t.json();
+    const handoffRow = (data.rows || []).find(r => r.handoffId === handoffId);
+    assert(!!handoffRow && handoffRow.taskId === taskId && handoffRow.toServiceMemberId === 'ATA-MAPE-000', 'GET /api/handoffs reflects the synced record, including the linked taskId');
+
+    t = await authReq(port, '/api/handoffs/sync', 'POST', tmpToken, {
+        records: [{ handoffId: handoffId, taskId: taskId, fromServiceMemberId: 'ATA-VEX-000', toServiceMemberId: 'ATA-MAPE-000', notes: 'e2e handoff drill', state: 'CREATED', createdAt: handoffCreatedAt, updatedAt: handoffCreatedAt }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.inserted === 0 && data.updated === 0 && data.unchanged === 1, 'repeat handoff sync → 0 inserted, 0 updated, 1 unchanged (idempotent)');
+    const handoffCountAfter = db.prepare('SELECT COUNT(*) AS n FROM handoffs WHERE id = ?').get(handoffId).n;
+    assert(handoffCountAfter === 1, 'repeat handoff sync does not duplicate the row');
+
+    t = await authReq(port, '/api/sync-status', 'GET', tmpToken);
+    data = t.json();
+    assert(data.tasks && data.tasks.state === 'CURRENT', 'sync-status surfaces tasks as CURRENT');
+    assert(data.handoffs && data.handoffs.state === 'CURRENT', 'sync-status surfaces handoffs as CURRENT');
+
+    db.prepare('DELETE FROM handoffs WHERE id = ?').run(handoffId);
+    db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+    console.log('     task/handoff test records cleaned up (sync_events audit rows intentionally left — append-only trail)');
+
+    // ── 18. revoke temp token; confirm 403 ───────────────────────
+    console.log('\n[18] Revoke temp token → confirm 403');
     db.prepare('UPDATE tokens SET active = 0 WHERE id = ?').run(tmpId);
     t = await authReq(port, '/api/stats', 'GET', tmpToken);
     assert(t.status === 403, 'revoked token → 403');

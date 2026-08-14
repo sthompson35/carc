@@ -94,6 +94,22 @@ async function main() {
     console.assert(t.status === 401, '/api/roll-calls/sync should require auth');
     console.log('POST /api/roll-calls/sync', t.status, 'auth guard ok');
 
+    t = await req({ ...base, path: '/api/tasks', method: 'GET' });
+    console.assert(t.status === 401, '/api/tasks should require auth');
+    console.log('GET /api/tasks', t.status, 'auth guard ok');
+
+    t = await req({ ...base, path: '/api/tasks/sync', method: 'POST', headers: { 'Content-Type': 'application/json' } }, '{}');
+    console.assert(t.status === 401, '/api/tasks/sync should require auth');
+    console.log('POST /api/tasks/sync', t.status, 'auth guard ok');
+
+    t = await req({ ...base, path: '/api/handoffs', method: 'GET' });
+    console.assert(t.status === 401, '/api/handoffs should require auth');
+    console.log('GET /api/handoffs', t.status, 'auth guard ok');
+
+    t = await req({ ...base, path: '/api/handoffs/sync', method: 'POST', headers: { 'Content-Type': 'application/json' } }, '{}');
+    console.assert(t.status === 401, '/api/handoffs/sync should require auth');
+    console.log('POST /api/handoffs/sync', t.status, 'auth guard ok');
+
     t = await req({ ...base, path: '/api/sync-events', method: 'GET' });
     console.assert(t.status === 401, '/api/sync-events should require auth');
     console.log('GET /api/sync-events', t.status, 'auth guard ok');

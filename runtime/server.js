@@ -13,6 +13,8 @@ const syncEventRoutes = require('./routes/syncEvents');
 const adminRoutes = require('./routes/admin');
 const chatRoutes = require('./routes/chat');
 const commandRoutes = require('./routes/commands');
+const taskRoutes = require('./routes/tasks');
+const handoffRoutes = require('./routes/handoffs');
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -53,6 +55,8 @@ app.use('/', syncEventRoutes);
 app.use('/', adminRoutes);
 app.use('/', chatRoutes);
 app.use('/', commandRoutes);
+app.use('/', taskRoutes);
+app.use('/', handoffRoutes);
 
 // Serve admin dashboard; must come after API routes so /api/* routes win first.
 app.get('/admin', function (req, res) {

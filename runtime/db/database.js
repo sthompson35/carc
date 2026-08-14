@@ -136,6 +136,37 @@ function initDb() {
 
         CREATE INDEX IF NOT EXISTS idx_cmd_audit_occurred ON command_audit_events(occurred_at);
         CREATE INDEX IF NOT EXISTS idx_cmd_audit_risk     ON command_audit_events(risk);
+
+        CREATE TABLE IF NOT EXISTS tasks (
+            id                        TEXT    PRIMARY KEY,
+            owner_service_member_id  TEXT,
+            assigned_by_service_member_id TEXT,
+            title                     TEXT,
+            description               TEXT,
+            source_mission_task_text TEXT,
+            state                     TEXT,
+            created_at                TEXT,
+            updated_at                TEXT,
+            synced_at                 TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner_service_member_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);
+
+        CREATE TABLE IF NOT EXISTS handoffs (
+            id                        TEXT    PRIMARY KEY,
+            task_id                   TEXT,
+            from_service_member_id   TEXT,
+            to_service_member_id     TEXT,
+            notes                     TEXT,
+            state                     TEXT,
+            created_at                TEXT,
+            updated_at                TEXT,
+            synced_at                 TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_handoffs_task  ON handoffs(task_id);
+        CREATE INDEX IF NOT EXISTS idx_handoffs_state ON handoffs(state);
     `);
 
     // Migration: sync_events predates execution_id (added for cross-referencing a sync

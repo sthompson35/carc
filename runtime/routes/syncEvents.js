@@ -28,7 +28,7 @@ router.get('/api/sync-events/status', requireBearer, function (req, res) {
     res.json(status);
 });
 
-const SYNC_TYPES = ['roster', 'roll_calls', 'chat', 'chat_command'];
+const SYNC_TYPES = ['roster', 'roll_calls', 'chat', 'chat_command', 'tasks', 'handoffs'];
 const STALE_THRESHOLD_MS = parseInt(process.env.SYNC_STALE_THRESHOLD_MS, 10) || 15 * 60 * 1000;
 
 // GET /api/sync-status — server-authoritative trust summary per sync type: CURRENT / STALE /
