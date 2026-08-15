@@ -18,6 +18,20 @@ about the live data.
 
 ## Changelog
 
+**v3.28.0** — Governed Help Desk (schema 22).
+- Adds a native Help Desk page (`app/pages/helpdesk.js`) with ticket intake, deterministic `HD-####` identifiers, requester/category/priority capture, controlled assignment, a real status workflow (`OPEN → IN_PROGRESS → WAITING → RESOLVED → CLOSED`), search/filtering, SLA monitoring, and CSV export.
+- Routes general intake to `@CINDY`; runtime, data, and critical-priority tickets route to `@VICTOR`. `@TANGO` and `@HELIX` are surfaced as the quality-review and independent-verification escalation chain in the ticket detail view, though nothing currently auto-routes to them.
+- SLA policy: Critical 4h, High 8h, Medium 24h, Low 72h — computed from `createdAt` + priority, with `ON_TRACK` / `AT_RISK` (within 2h of due) / `BREACHED` / `COMPLETE` states. Every status change, assignee change, and note is retained in an append-only per-ticket `history[]`.
+- Hardens the WSL frontend launcher (`scripts/wsl/start-frontend.sh`): an already-running CARC server is detected and reported instead of silently printing a URL that was never bound; a foreign process holding the port produces a precise diagnostic instead of a confusing bind failure.
+- Verified: 217/217 existing unit tests plus new Help Desk coverage, live browser regression clean, backend smoke + e2e + DR drill unaffected (Help Desk is entirely local-first, no backend routes).
+
+**v3.26.2** — Task & Handoff Ledger restoration after a concurrent-session merge (schema 21).
+- A parallel WSL-side session applied its own package directly to this working tree mid-development, which (among genuine improvements — see v3.26.1 below) stripped the uncommitted Task & Handoff Ledger, `missionProfile.fieldProvenance` UI, and regression checks at the working-tree level. Reconciled rather than discarded: restored `DATA.tasks[]` (`ASSIGNED → ACKNOWLEDGED → IN_PROGRESS → COMPLETED`, or `CANCELLED`) and `DATA.handoffs[]` (`CREATED → ACKNOWLEDGED → ACCEPTED → COMPLETED`, or `DECLINED`) as their own schema-21 step, since the other session's Canonical Cutover work legitimately occupies schema 20.
+- Every transition is a declared actor state flip CARC can log and enforce today — no fabricated verification-pipeline states.
+- Agent Chat commands: `"assign task <title> to @X"`, `"acknowledge/complete task <id>"` (owner-only), `"hand off task <id> to @X"` (routed through the existing command-risk/approval gate, same `confirm()` mechanism as roster-wide broadcast).
+- Found and fixed a real regression introduced as a side effect of the merge: `data/seed.js`'s `schemaVersion` had been bumped to 20, which silently skipped every migration step below it on a fresh install — including the schema-17 knowledge-path backfill. Reverted to the original low starting value so the full migration chain runs in sequence again.
+- Also applied a small independently-found fix: an empty command-audit trail now syncs as a genuine `0/0` success instead of being silently skipped, so a fresh install can actually reach Command sync state `CURRENT`.
+
 **v3.26.1** — Canonical Cutover & Governed Member Capability Registry (schema 20).
 - Fixes the persisted 132-vs-66 split: legacy participant rows that share a canonical roster callsign but lack canonical IDs are remapped to the real canonical participant, conversation/message references are preserved, and only the duplicate row is removed. Roll Call now uses `currentCanonicalParticipants()` for its participant list, totals, attendance, transcript membership, and conversation participant IDs, so a full canonical roll call is 66/66 rather than 132/132.
 - Adds the full operator-defined working member registry from the repository's FULL ROSTER ROLL CALL reports: division, purpose, mission, Primary Task 1/2, supporting tasks, style, format, escalation, working authority description, handoff targets, pipeline position, assigned tools, settings, and skills. These remain `OPERATOR_DEFINED_WORKING` and do not overwrite evidence-gated persona/communication/handoff profiles or runtime verification.

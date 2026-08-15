@@ -10,7 +10,7 @@
     }
 
     function exportData() {
-        var exportObj = { version: '3.22.0', timestamp: new Date().toISOString(), exported_by: 'CARC Dashboard', data: DATA };
+        var exportObj = { version: (String(DATA.governance.release || '').match(/v([\d.]+)/) || [, '0.0.0'])[1], timestamp: new Date().toISOString(), exported_by: 'CARC Dashboard', data: DATA };
         var blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');

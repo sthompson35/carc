@@ -215,6 +215,10 @@ thead .sticky-col-1, thead .sticky-col-2 { z-index:3; background:var(--surface);
 .badge-inactive { background:#fee2e2; color:#991b1b; }
 .badge-completed { background:#e0e7ff; color:#4338ca; }
 .badge-archived { background:var(--gray-200); color:var(--gray-600); }
+.badge-danger { background:#fee2e2; color:#991b1b; }
+.badge-warning { background:#fef3c7; color:#92400e; }
+.badge-success { background:#d1fae5; color:#065f46; }
+.badge-info { background:#dbeafe; color:#1e40af; }
 :root[data-theme="dark"] .badge-agent, :root[data-theme="dark"] .badge-council, :root[data-theme="dark"] .badge-user,
 :root[data-theme="dark"] .badge-bot, :root[data-theme="dark"] .badge-trooper, :root[data-theme="dark"] .badge-assistant,
 :root[data-theme="dark"] .badge-active, :root[data-theme="dark"] .badge-inactive, :root[data-theme="dark"] .badge-completed { filter:brightness(1.25) saturate(0.9); }
@@ -449,6 +453,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             <button class="nav-link" data-route="participants"><span class="ic">👥</span> Participants</button>
             <button class="nav-link" data-route="conversations"><span class="ic">💬</span> Conversations</button>
             <button class="nav-link" data-route="agent"><span class="ic">🤖</span> Agent</button>
+            <button class="nav-link" data-route="helpdesk"><span class="ic">🎫</span> Help Desk</button>
             <button class="nav-link" data-route="governance"><span class="ic">🛡️</span> Governance</button>
             <button class="nav-link" data-route="analytics"><span class="ic">📈</span> Analytics</button>
             <button class="nav-link" data-route="admin"><span class="ic">🛠️</span> Admin</button>
@@ -628,7 +633,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                     <input type="file" id="importPartCsvInput" accept=".csv,text/csv" class="hidden">
 
                     <div class="info-banner" style="margin:10px 0 12px;padding:10px 12px;border-radius:8px;background:var(--gray-50);border:1px solid var(--gray-200);font-size:.75rem;line-height:1.45;">
-                        <b>CARC v3.26.1 canonical operating registry:</b> 66 controlled Academy identities expose exact callsign, <code>TROOPER: ""</code>, <code>AGENT: (id)</code>, Service Member ID, Callsign ID, legacy lineage, role, and command. <b>Operational Status: MISSION_READY</b> · <b>Production Verification: NOT_RUNTIME_VERIFIED</b> · <b>Gate Decision: HOLD</b> until governed source access, enforced permissions, controlled workflow, runtime telemetry, audit evidence, and independent verification are proven.
+                        <b>CARC v3.28.0 canonical operating registry:</b> 66 controlled Academy identities expose exact callsign, <code>TROOPER: ""</code>, <code>AGENT: (id)</code>, Service Member ID, Callsign ID, legacy lineage, role, and command. <b>Operational Status: MISSION_READY</b> · <b>Production Verification: NOT_RUNTIME_VERIFIED</b> · <b>Gate Decision: HOLD</b> until governed source access, enforced permissions, controlled workflow, runtime telemetry, audit evidence, and independent verification are proven.
                     </div>
                     <div class="table-wrap">
                         <table>
@@ -814,7 +819,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             <!-- ============================================================ -->
             <section class="page" id="page-governance" hidden>
                 <div class="panel-header" style="margin-bottom:14px;">
-                    <div class="panel-title">🛡️ Governance &amp; Production Control <span class="badge" id="govReleaseBadge">v3.26.1</span></div>
+                    <div class="panel-title">🛡️ Governance &amp; Production Control <span class="badge" id="govReleaseBadge">v3.28.0</span></div>
                     <div class="panel-actions">
                         <button class="btn btn-outline btn-sm" id="btnGovAudit">🧬 Run Integrity Audit</button>
                         <button class="btn btn-outline btn-sm" id="btnGovExport">⬇️ Export Evidence</button>
@@ -969,6 +974,41 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             </section>
 
             <!-- ============================================================ -->
+            <!-- PAGE: HELP DESK -->
+            <!-- ============================================================ -->
+            <section class="page" id="page-helpdesk" hidden>
+                <div class="panel-header" style="margin-bottom:14px;">
+                    <div><div class="panel-title">🎫 CARC Help Desk</div><div class="text-xs text-muted">Governed intake · controlled ownership · SLA evidence · retained history</div></div>
+                    <div class="panel-actions">
+                        <button class="btn btn-outline btn-sm" id="btnExportHelpDesk">⬇️ Export CSV</button>
+                        <button class="btn btn-primary btn-sm" id="btnNewHelpTicket">➕ New Ticket</button>
+                    </div>
+                </div>
+                <section class="stats-grid" id="helpDeskStats"></section>
+                <div class="panel">
+                    <div class="panel-header"><div class="panel-title">📥 Ticket Queue <span class="badge" id="helpDeskCount">0 shown</span></div></div>
+                    <div class="grid-toolbar">
+                        <input type="text" id="helpDeskSearch" placeholder="Search ticket, requester, or assignee…">
+                        <select id="helpDeskStatus"><option value="">All statuses</option><option>OPEN</option><option>IN_PROGRESS</option><option>WAITING</option><option>RESOLVED</option><option>CLOSED</option></select>
+                        <select id="helpDeskPriority"><option value="">All priorities</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select>
+                        <select id="helpDeskCategory"><option value="">All categories</option><option>ACCESS</option><option>RUNTIME</option><option>DATA</option><option>WORKFLOW</option><option>PERSONA</option><option>GENERAL</option></select>
+                    </div>
+                    <div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Issue</th><th>Priority</th><th>Status</th><th>Owner</th><th>SLA</th></tr></thead><tbody id="helpDeskBody"></tbody></table></div>
+                </div>
+                <div class="two-col">
+                    <div class="panel"><div class="panel-header"><div class="panel-title">☎️ Support Command Chain</div></div>
+                        <div class="kv-row"><span>Intake &amp; customer service</span><b>@CINDY</b></div>
+                        <div class="kv-row"><span>Runtime, product &amp; known errors</span><b>@VICTOR</b></div>
+                        <div class="kv-row"><span>Quality review</span><b>@TANGO</b></div>
+                        <div class="kv-row"><span>Independent verification</span><b>@HELIX</b></div>
+                    </div>
+                    <div class="panel"><div class="panel-header"><div class="panel-title">⏱️ SLA Policy</div></div>
+                        <div class="kv-row"><span>Critical</span><b>4 hours</b></div><div class="kv-row"><span>High</span><b>8 hours</b></div><div class="kv-row"><span>Medium</span><b>24 hours</b></div><div class="kv-row"><span>Low</span><b>72 hours</b></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================================================ -->
             <!-- PAGE: ADMIN -->
             <!-- ============================================================ -->
             <section class="page" id="page-admin" hidden>
@@ -1006,7 +1046,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                             <div class="kv-row"><span>Import</span><kbd>Ctrl</kbd>+<kbd>I</kbd></div>
                             <div class="kv-row"><span>New conversation</span><kbd>Ctrl</kbd>+<kbd>N</kbd></div>
                             <div class="kv-row"><span>Search</span><kbd>Ctrl</kbd>+<kbd>K</kbd></div>
-                            <div class="kv-row"><span>Jump to page</span><kbd>1</kbd>–<kbd>7</kbd></div>
+                            <div class="kv-row"><span>Jump to page</span><kbd>1</kbd>–<kbd>8</kbd></div>
                         </div>
                     </div>
                     <div class="panel">
@@ -1249,6 +1289,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
 <script src="app/pages/participants.js"></script>
 <script src="app/pages/conversations.js"></script>
 <script src="app/pages/agent.js"></script>
+<script src="app/pages/helpdesk.js"></script>
 <script src="app/pages/analytics.js"></script>
 <script src="app/pages/admin.js"></script>
 <script src="app/router.js"></script>

@@ -258,6 +258,25 @@ export default async function run(page) {
         check(/No match found/.test(notFoundText), 'Tool ID Lookup still reports no-match for a garbage query');
     }
 
+    // Help Desk: create a ticket, confirm deterministic ID + routing + SLA badge render.
+    await page.locator('.nav-link[data-route="helpdesk"]').first().click({ timeout: 5000 });
+    await page.waitForTimeout(300);
+    check((await page.locator('#page-helpdesk').getAttribute('hidden')) === null, 'help desk page renders and is visible');
+    {
+        await page.locator('#btnNewHelpTicket').click({ timeout: 5000 });
+        await page.waitForTimeout(300);
+        await page.locator('#hdSubject').fill('e2e regression ticket');
+        await page.locator('#hdDescription').fill('Automated regression check');
+        await page.locator('#hdCategory').selectOption('RUNTIME');
+        await page.locator('#hdCreate').click({ timeout: 5000 });
+        await page.waitForTimeout(400);
+        const hdBodyText = await page.locator('#helpDeskBody').innerText();
+        check(/HD-\d{4}/.test(hdBodyText) && hdBodyText.includes('e2e regression ticket'), 'creating a Help Desk ticket shows a deterministic HD-#### row in the queue');
+        check(hdBodyText.includes('@VICTOR'), 'a RUNTIME-category ticket routes to @VICTOR, not the default @CINDY');
+    }
+    await page.locator('.nav-link[data-route="admin"]').first().click({ timeout: 5000 });
+    await page.waitForTimeout(300);
+
     // Task + Handoff Ledger: create a task, drive it through its real transitions, confirm
     // illegal-transition buttons are absent at each stage.
     {

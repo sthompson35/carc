@@ -65,6 +65,7 @@
                 ]
             },
             totalMessages: 1284,
+            helpDesk: { tickets: [], settings: { defaultRequester:'Shylow Thompson', slaHours:{ CRITICAL:4, HIGH:8, MEDIUM:24, LOW:72 } } },
             settings: {
                 defaultPageSize: 8
             },

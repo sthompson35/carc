@@ -22,7 +22,7 @@
 
     var AUTO_SYNC_MAX_FAILURES = 5;
 
-    var ROUTES = ['dashboard', 'participants', 'conversations', 'agent', 'governance', 'analytics', 'admin'];
+    var ROUTES = ['dashboard', 'participants', 'conversations', 'agent', 'helpdesk', 'governance', 'analytics', 'admin'];
 
-    var ROUTE_TITLES = { dashboard: 'Dashboard', participants: 'Participants', conversations: 'Conversations', agent: 'Agent', governance: 'Governance', analytics: 'Analytics', admin: 'Admin' };
+    var ROUTE_TITLES = { dashboard: 'Dashboard', participants: 'Participants', conversations: 'Conversations', agent: 'Agent', helpdesk: 'Help Desk', governance: 'Governance', analytics: 'Analytics', admin: 'Admin' };
 

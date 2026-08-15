@@ -26,6 +26,7 @@
         if (current === 'participants') renderParticipantsGrid();
         if (current === 'conversations') renderConversationsGrid();
         if (current === 'agent') { renderAgentPage(); }
+        if (current === 'helpdesk') renderHelpDeskPage();
         if (current === 'analytics') renderAnalyticsPage();
         if (current === 'admin') renderAdminPage();
         updateStorageSize();
@@ -43,6 +44,7 @@
         wireParticipantsPage();
         wireConversationsPage();
         wireAgentPage();
+        wireHelpDeskPage();
         wireGovernancePage();
         wireAnalyticsPage();
         wireAdminPage();

@@ -428,6 +428,17 @@
                 text:'CARC v3.26.2 added a governed task and handoff ledger: DATA.tasks[] (ASSIGNED → ACKNOWLEDGED → IN_PROGRESS → COMPLETED, or CANCELLED) and DATA.handoffs[] (CREATED → ACKNOWLEDGED → ACCEPTED → COMPLETED, or DECLINED) — every transition is a declared actor state flip CARC can log and enforce today; no fabricated verification-pipeline states.'
             });
         }
-        d.schemaVersion = 21;
+        if ((d.schemaVersion || 0) < 22) {
+            d.helpDesk = d.helpDesk || { tickets:[], settings:{ defaultRequester:'Shylow Thompson', slaHours:{ CRITICAL:4, HIGH:8, MEDIUM:24, LOW:72 } } };
+            if (!Array.isArray(d.helpDesk.tickets)) d.helpDesk.tickets = [];
+            d.governance.release = 'CARC v3.28.0 — Governed Help Desk';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({
+                time:new Date().toISOString(),
+                type:'operations',
+                text:'CARC v3.28.0 added a governed local-first help desk with deterministic HD-#### IDs, SLA tracking, controlled ownership (@CINDY for general intake, @VICTOR for runtime/data/critical), status transitions, append-only ticket history, filtering, and CSV export.'
+            });
+        }
+        d.schemaVersion = 22;
         return d;
     }

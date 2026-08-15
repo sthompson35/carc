@@ -11,6 +11,7 @@
         if (route === 'participants') renderParticipantsGrid();
         if (route === 'conversations') renderConversationsGrid();
         if (route === 'agent') { renderAgentPage(); renderChat(); }
+        if (route === 'helpdesk') renderHelpDeskPage();
         if (route === 'governance') renderGovernancePage();
         if (route === 'analytics') renderAnalyticsPage();
         if (route === 'admin') renderAdminPage();

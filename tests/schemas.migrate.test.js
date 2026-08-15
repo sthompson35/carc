@@ -23,7 +23,12 @@ module.exports = {
         var migrateData = ctx.migrateData;
 
         var d = migrateData({});
-        assert(d.schemaVersion === 21, 'migrateData sets schemaVersion to 21 (got ' + d.schemaVersion + ')');
+        assert(d.schemaVersion === 22, 'migrateData sets schemaVersion to 22 (got ' + d.schemaVersion + ')');
+        assert(d.helpDesk && Array.isArray(d.helpDesk.tickets), 'schema 22 initializes the governed help desk safely');
+        var helpDeskD = migrateData({});
+        helpDeskD.helpDesk.tickets.push({ id:'HD-0099', subject:'Preserve me' });
+        var migratedAgain = migrateData(helpDeskD);
+        assert(migratedAgain.helpDesk.tickets.length === 1 && migratedAgain.helpDesk.tickets[0].id === 'HD-0099', 'schema 22 migration preserves existing help desk tickets');
         assert(Array.isArray(d.participants) && d.participants.length === 66, 'migrateData populates all 66 canonical participants from ROSTER');
 
         assert(Array.isArray(d.tasks) && d.tasks.length === 0, 'migrateData backfills an empty tasks[] array for a fresh install');
