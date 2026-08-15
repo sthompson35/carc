@@ -229,8 +229,8 @@
         showToast('info', '📋 Roll call initiated…');
         addLog('Roll call started — message: ' + message, 'warning', meta);
         setTimeout(function () {
-            var participants = DATA.participants.slice();
-            var activeParticipants = participants.filter(function (p) { return p.status === 'active'; });
+            var participants = currentCanonicalParticipants(DATA.participants);
+            var activeParticipants = participants;
             var total = participants.length || 1;
             var present = activeParticipants.length;
             var rate = +((present / total) * 100).toFixed(1);

@@ -7,6 +7,40 @@
         return byService;
     }
 
+
+    // Schema-20 canonical cutover: reconcile legacy duplicate rows that share a real roster
+    // callsign with a canonical member but lack canonical IDs. Preserve references by remapping
+    // old participant IDs to the canonical participant ID, then remove only the duplicate rows.
+    function reconcileCanonicalParticipantDuplicates(d) {
+        var canonicalByCallsign = {}, idRemap = {}, removed = [];
+        (d.participants || []).forEach(function (p) {
+            if (p && p.serviceMemberId && p.callsign) canonicalByCallsign[normalizeIdentity(p.callsign)] = p;
+        });
+        var kept = [];
+        (d.participants || []).forEach(function (p) {
+            var key = p && p.callsign ? normalizeIdentity(p.callsign) : '';
+            var canonical = key ? canonicalByCallsign[key] : null;
+            if (canonical && canonical !== p && !p.serviceMemberId) {
+                if (p.id && canonical.id) idRemap[p.id] = canonical.id;
+                // Preserve useful mutable history without allowing legacy rows to overwrite identity doctrine.
+                if (p.lastActive && (!canonical.lastActive || new Date(p.lastActive) > new Date(canonical.lastActive))) canonical.lastActive = p.lastActive;
+                if (p.status === 'inactive') canonical.status = 'inactive';
+                removed.push({ id:p.id || '', callsign:p.callsign || '', canonicalId:canonical.id });
+                return;
+            }
+            kept.push(p);
+        });
+        d.participants = kept;
+        (d.conversations || []).forEach(function (c) {
+            var seen = {};
+            c.participantIds = (c.participantIds || []).map(function (id) { return idRemap[id] || id; }).filter(function (id) {
+                if (seen[id]) return false; seen[id] = true; return true;
+            });
+            (c.messagesList || []).forEach(function (m) { if (m && m.participantId && idRemap[m.participantId]) m.participantId = idRemap[m.participantId]; });
+        });
+        return { removed:removed, idRemap:idRemap };
+    }
+
     function auditCanonicalRegistry(participants) {
         var controlled = participants.filter(function (p) { return !!p.serviceMemberId; });
         var seenService = {}, seenCallsignId = {}, seenCallsign = {}, seenAgent = {}, seenLegacy = {};
@@ -77,7 +111,7 @@
             var source = canonical[sid];
             var target = existingByService[sid];
             if (target) {
-                ['name','type','dept','callsign','callsignId','trooper','agentId','serviceMemberId','legacyAlias','role','missionProfile','canonicalStatus','readiness','sourceId','referenceProfile'].forEach(function (k) { target[k] = source[k]; });
+                ['name','type','dept','callsign','callsignId','trooper','agentId','serviceMemberId','legacyAlias','role','missionProfile','canonicalStatus','readiness','sourceId'].forEach(function (k) { target[k] = source[k]; });
             } else {
                 d.participants.push(source);
             }
@@ -359,16 +393,41 @@
             });
         }
         if ((d.schemaVersion || 0) < 20) {
+            var cutover = reconcileCanonicalParticipantDuplicates(d);
+            d.participants.forEach(function (p) {
+                if (!p.serviceMemberId || !p.callsign) return;
+                var working = MEMBER_PROFILE_REGISTRY[p.callsign];
+                if (working) {
+                    // Working/operator-defined configuration is separate from evidence-gated
+                    // personaProfile / communicationProfile / handoffProfile and never promotes them.
+                    p.memberProfile = p.memberProfile || JSON.parse(JSON.stringify(working));
+                    if (!Array.isArray(p.skills) || !p.skills.length) p.skills = JSON.parse(JSON.stringify(working.skills || []));
+                }
+            });
+            var skillAuditV20 = auditSkills(d.participants);
+            d.registryAudit = auditCanonicalRegistry(d.participants);
+            if (!d.registryAudit.issues) d.registryAudit.issues = [];
+            skillAuditV20.blockers.forEach(function (x) { d.registryAudit.issues.push('Skill registry blocker: ' + x); });
+            d.registryAudit.valid = d.registryAudit.issues.length === 0;
+            d.governance.release = 'CARC v3.26.1 — Canonical Cutover & Governed Member Capability Registry';
+            d.governance.memberCapabilityRegistry = { status:'WORKING_PROFILE_REGISTRY', skillVerificationPolicy:'ASSIGNMENT_NEVER_IMPLIES_VERIFICATION', duplicateRowsRemoved:cutover.removed.length, skillAudit:skillAuditV20 };
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({
+                time:new Date().toISOString(), type:'reconciliation',
+                text:'CARC v3.26.1 performed canonical participant cutover: legacy duplicate rows sharing canonical callsigns were remapped and removed without deleting conversation history. Added working member capability profiles and governed skill records. Skill assignment does not imply verification; VERIFIED requires assessment, evidence, verifier, timestamp, and current review state.'
+            });
+        }
+        if ((d.schemaVersion || 0) < 21) {
             // d.tasks/d.handoffs are already guarded non-destructively at the top of this
             // function — nothing to backfill here beyond the release marker and ledger entry.
-            d.governance.release = 'CARC v3.26.0 — Task & Handoff Ledger';
+            d.governance.release = 'CARC v3.26.2 — Task & Handoff Ledger';
             d.governance.ledger = d.governance.ledger || [];
             d.governance.ledger.unshift({
                 time:new Date().toISOString(),
                 type:'architecture',
-                text:'CARC v3.26.0 added a governed task and handoff ledger: DATA.tasks[] (ASSIGNED → ACKNOWLEDGED → IN_PROGRESS → COMPLETED, or CANCELLED) and DATA.handoffs[] (CREATED → ACKNOWLEDGED → ACCEPTED → COMPLETED, or DECLINED) — every transition is a declared actor state flip CARC can log and enforce today; no fabricated verification-pipeline states.'
+                text:'CARC v3.26.2 added a governed task and handoff ledger: DATA.tasks[] (ASSIGNED → ACKNOWLEDGED → IN_PROGRESS → COMPLETED, or CANCELLED) and DATA.handoffs[] (CREATED → ACKNOWLEDGED → ACCEPTED → COMPLETED, or DECLINED) — every transition is a declared actor state flip CARC can log and enforce today; no fabricated verification-pipeline states.'
             });
         }
-        d.schemaVersion = 20;
+        d.schemaVersion = 21;
         return d;
     }

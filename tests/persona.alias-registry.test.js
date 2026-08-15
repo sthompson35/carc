@@ -2,7 +2,7 @@
 // tests/persona.alias-registry.test.js
 
 module.exports = {
-    modules: ['app/util.js', 'data/roster.js', 'data/reference-profiles.js', 'persona/mission-doctrine.js', 'persona/alias-registry.js'],
+    modules: ['app/util.js', 'data/roster.js', 'persona/mission-doctrine.js', 'persona/alias-registry.js'],
     run: function (ctx, assert) {
         var normalizeIdentity = ctx.normalizeIdentity;
         var resolveCanonicalIdentity = ctx.resolveCanonicalIdentity;

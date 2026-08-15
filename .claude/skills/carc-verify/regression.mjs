@@ -141,23 +141,6 @@ export default async function run(page) {
             await page.locator('#fpClose').click({ timeout: 5000 }).catch(() => {});
             await page.waitForTimeout(200);
         }
-
-        // Reference Profile: unverified external content, must be clearly labeled as such and
-        // never rendered as if it were confirmed CARC evidence.
-        await page.locator('button[data-act="view"]').first().click({ timeout: 5000 });
-        await page.waitForTimeout(400);
-        const rpViewBtn = page.locator('.rp-view').first();
-        if (await rpViewBtn.count()) {
-            const inlineText = await page.locator('#modalBody').innerText();
-            check(inlineText.includes('UNVERIFIED'), 'participant detail modal labels the Reference Profile as UNVERIFIED inline, before opening it');
-            await rpViewBtn.click({ timeout: 5000 });
-            await page.waitForTimeout(300);
-            const rpModalText = await page.locator('#modalBody').innerText();
-            check(/UNVERIFIED/.test(rpModalText) && /no known origin/i.test(rpModalText), 'Reference Profile modal repeats the unverified-provenance disclaimer, not just a bare label');
-            check((await page.locator('#modalBody input:not([disabled]), #modalBody textarea, #modalBody select').count()) === 0, 'Reference Profile modal has no editable fields');
-            await page.locator('#rpClose').click({ timeout: 5000 }).catch(() => {});
-            await page.waitForTimeout(200);
-        }
     }
 
     // Agent Chat: targeted + multi-target messages, search

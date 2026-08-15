@@ -453,7 +453,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             <button class="nav-link" data-route="analytics"><span class="ic">📈</span> Analytics</button>
             <button class="nav-link" data-route="admin"><span class="ic">🛠️</span> Admin</button>
         </nav>
-        <div class="sidebar-footer">CARC v3.22.0 · Local-first · <span id="storageSize">—</span></div>
+        <div class="sidebar-footer">CARC <span id="footerRelease">v—</span> · Local-first · <span id="storageSize">—</span></div>
     </aside>
 
     <div class="main-col">
@@ -628,7 +628,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                     <input type="file" id="importPartCsvInput" accept=".csv,text/csv" class="hidden">
 
                     <div class="info-banner" style="margin:10px 0 12px;padding:10px 12px;border-radius:8px;background:var(--gray-50);border:1px solid var(--gray-200);font-size:.75rem;line-height:1.45;">
-                        <b>CARC v3.15.0 canonical broadcast registry:</b> 66 controlled Academy identities expose exact callsign, <code>TROOPER: ""</code>, <code>AGENT: (id)</code>, Service Member ID, Callsign ID, legacy lineage, role, and command. <b>Operational Status: MISSION_READY</b> · <b>Production Verification: NOT_RUNTIME_VERIFIED</b> · <b>Gate Decision: HOLD</b> until governed source access, enforced permissions, controlled workflow, runtime telemetry, audit evidence, and independent verification are proven.
+                        <b>CARC v3.26.1 canonical operating registry:</b> 66 controlled Academy identities expose exact callsign, <code>TROOPER: ""</code>, <code>AGENT: (id)</code>, Service Member ID, Callsign ID, legacy lineage, role, and command. <b>Operational Status: MISSION_READY</b> · <b>Production Verification: NOT_RUNTIME_VERIFIED</b> · <b>Gate Decision: HOLD</b> until governed source access, enforced permissions, controlled workflow, runtime telemetry, audit evidence, and independent verification are proven.
                     </div>
                     <div class="table-wrap">
                         <table>
@@ -814,7 +814,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
             <!-- ============================================================ -->
             <section class="page" id="page-governance" hidden>
                 <div class="panel-header" style="margin-bottom:14px;">
-                    <div class="panel-title">🛡️ Governance &amp; Production Control <span class="badge" id="govReleaseBadge">v3.17.0</span></div>
+                    <div class="panel-title">🛡️ Governance &amp; Production Control <span class="badge" id="govReleaseBadge">v3.26.1</span></div>
                     <div class="panel-actions">
                         <button class="btn btn-outline btn-sm" id="btnGovAudit">🧬 Run Integrity Audit</button>
                         <button class="btn btn-outline btn-sm" id="btnGovExport">⬇️ Export Evidence</button>
@@ -1199,7 +1199,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
         </div>
 
         <footer class="footer">
-            Council Agent Roll Call (CARC) <span id="footerRelease">v—</span> · Idempotent canonical broadcast engine · Governed local control plane · Production claims require evidence
+            Council Agent Roll Call (CARC) <span id="footerReleaseBottom">v—</span> · Idempotent canonical broadcast engine · Governed local control plane · Production claims require evidence
         </footer>
     </div>
 </div>
@@ -1224,13 +1224,14 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
 <script src="config/labels.js"></script>
 <script src="app/util.js"></script>
 <script src="data/roster.js"></script>
-<script src="data/reference-profiles.js"></script>
 <script src="persona/mission-doctrine.js"></script>
 <script src="persona/identity.js"></script>
 <script src="persona/knowledge-path.js"></script>
 <script src="persona/identity-profiles.js"></script>
 <script src="persona/chat-persona.js"></script>
 <script src="persona/alias-registry.js"></script>
+<script src="persona/member-registry.js"></script>
+<script src="persona/skills-registry.js"></script>
 <script src="schemas/migrate.js"></script>
 <script src="data/seed.js"></script>
 <script src="app/activity-log.js"></script>

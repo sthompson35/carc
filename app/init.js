@@ -2,8 +2,11 @@
 // app/init.js
 
     function renderReleaseStrings() {
-        var el = document.getElementById('footerRelease');
-        if (el) el.textContent = (String(DATA.governance.release || '').match(/v[\d.]+/) || ['—'])[0];
+        var v = (String(DATA.governance.release || '').match(/v[\d.]+/) || ['—'])[0];
+        var el1 = document.getElementById('footerRelease');
+        if (el1) el1.textContent = v;
+        var el2 = document.getElementById('footerReleaseBottom');
+        if (el2) el2.textContent = v;
     }
 
     function renderAll() {

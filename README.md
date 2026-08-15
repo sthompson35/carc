@@ -18,6 +18,12 @@ about the live data.
 
 ## Changelog
 
+**v3.26.1** — Canonical Cutover & Governed Member Capability Registry (schema 20).
+- Fixes the persisted 132-vs-66 split: legacy participant rows that share a canonical roster callsign but lack canonical IDs are remapped to the real canonical participant, conversation/message references are preserved, and only the duplicate row is removed. Roll Call now uses `currentCanonicalParticipants()` for its participant list, totals, attendance, transcript membership, and conversation participant IDs, so a full canonical roll call is 66/66 rather than 132/132.
+- Adds the full operator-defined working member registry from the repository's FULL ROSTER ROLL CALL reports: division, purpose, mission, Primary Task 1/2, supporting tasks, style, format, escalation, working authority description, handoff targets, pipeline position, assigned tools, settings, and skills. These remain `OPERATOR_DEFINED_WORKING` and do not overwrite evidence-gated persona/communication/handoff profiles or runtime verification.
+- Adds governed `skills[]` records with `skillId · name · category · proficiencyTarget · status · sourceRecordId · evidence · assessmentId · verifier · verifiedAt · reviewDueAt`. Role/roll-call skills start `ASSIGNED`; `VERIFIED` requires assessment ID, evidence, verifier, verification timestamp, and current review state. Assignment never implies verification or mission eligibility.
+- Participant detail now surfaces the working capability profile and skill verification counts/evidence state.
+
 **Project note (no `index.html` version bump — the app's code did not
 change)** — Full project scan beyond the single HTML file. Found and
 verified two things that had never been examined before:
@@ -783,7 +789,7 @@ load, without the user losing local edits.
 Export produces a JSON file compatible with Import, so data can be moved
 between browsers/machines manually.
 
-## Identity & Governance Data Model (schema 17–19)
+## Identity & Governance Data Model (schema 17–20)
 
 Formal reference for the three per-identity registries added across schema
 versions 17–19 (see the v3.23.0–v3.25.0 changelog entries above for the

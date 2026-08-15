@@ -47,7 +47,10 @@ router.post('/api/commands/sync', requireBearer, function (req, res) {
         return res.status(status).json({ error: 'BAD_REQUEST', reason, executionId });
     }
 
-    if (!Array.isArray(records) || !records.length) return fail(400, 'records[] is required');
+    // An empty array is a valid complete snapshot: a fresh CARC install has no governed command
+    // events yet, but the runtime must still be able to record a successful 0/0 synchronization.
+    // Missing/non-array records remain invalid.
+    if (!Array.isArray(records)) return fail(400, 'records[] is required');
     for (const r of records) {
         if (!r || typeof r.id !== 'string' || !r.id) return fail(400, 'each record requires id');
     }

@@ -2,6 +2,10 @@
   "name": "carc",
   "private": true,
   "scripts": {
-    "test": "node tests/run.js"
+    "test": "node tests/run.js",
+    "wsl:verify": "bash scripts/wsl/verify-wsl.sh",
+    "wsl:frontend": "bash scripts/wsl/start-frontend.sh",
+    "wsl:runtime": "bash scripts/wsl/start-runtime.sh",
+    "wsl:start": "bash scripts/wsl/start-all.sh"
   }
 }

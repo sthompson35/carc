@@ -7,12 +7,13 @@ module.exports = {
         'config/labels.js',
         'app/util.js',
         'data/roster.js',
-        'data/reference-profiles.js',
         'persona/mission-doctrine.js',
         'persona/identity.js',
         'persona/knowledge-path.js',
         'persona/identity-profiles.js',
         'persona/alias-registry.js',
+        'persona/member-registry.js',
+        'persona/skills-registry.js',
         'schemas/migrate.js',
         'data/seed.js',
         'communication/chat-router.js',
@@ -22,7 +23,7 @@ module.exports = {
         var migrateData = ctx.migrateData;
 
         var d = migrateData({});
-        assert(d.schemaVersion === 20, 'migrateData sets schemaVersion to 20 (got ' + d.schemaVersion + ')');
+        assert(d.schemaVersion === 21, 'migrateData sets schemaVersion to 21 (got ' + d.schemaVersion + ')');
         assert(Array.isArray(d.participants) && d.participants.length === 66, 'migrateData populates all 66 canonical participants from ROSTER');
 
         assert(Array.isArray(d.tasks) && d.tasks.length === 0, 'migrateData backfills an empty tasks[] array for a fresh install');
@@ -30,8 +31,6 @@ module.exports = {
 
         var MISSION_FIELDS = ['purpose', 'mission', 'duties', 'tasks', 'outputs'];
         assert(d.participants.every(function (p) { return p.missionProfile.fieldProvenance && MISSION_FIELDS.every(function (f) { return !!p.missionProfile.fieldProvenance[f]; }); }), 'every participant gets a 5-field missionProfile.fieldProvenance via the existing unconditional canonical merge — no schema bump needed for this specific field');
-
-        assert(d.participants.every(function (p) { return p.referenceProfile && p.referenceProfile.provenance === 'UNVERIFIED_EXTERNAL_SOURCE'; }), 'every participant gets a referenceProfile stamped UNVERIFIED_EXTERNAL_SOURCE via the same unconditional merge');
 
         assert(d.participants.every(function (p) { return Array.isArray(p.aliases) && p.aliases.length === 0; }), 'a fresh migration leaves aliases[] empty for all 66 identities — no fabricated alias data');
         assert(d.participants.every(function (p) { return Array.isArray(p.legacyIds) && p.legacyIds.length === 1 && p.legacyIds[0].value === p.legacyAlias; }), 'a fresh migration seeds exactly one real legacyIds[] entry from the existing legacyAlias value');

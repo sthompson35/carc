@@ -257,6 +257,20 @@
                             '<div class="mt-1"><button class="btn btn-outline btn-sm kp-evidence-edit" data-pid="' + esc(p.id) + '" data-sid="' + esc(s.id) + '">' + btnLabel + '</button></div></div>';
                     }).join('') + '</div></div>';
             })() : '') +
+            (p.memberProfile ? '<div class="mt-2"><strong class="text-sm">Working Member Capability Profile</strong>' +
+                '<div class="kv-row"><span>Provenance</span><span>' + esc((p.memberProfile.provenance && p.memberProfile.provenance.status) || 'WORKING') + '</span></div>' +
+                '<div class="kv-row"><span>Division</span><span>' + esc(p.memberProfile.division || '—') + '</span></div>' +
+                '<div class="mt-1"><b>Purpose</b><div class="text-sm text-muted">' + esc(p.memberProfile.purpose || '—') + '</div></div>' +
+                '<div class="mt-1"><b>Mission</b><div class="text-sm text-muted">' + esc(p.memberProfile.mission || '—') + '</div></div>' +
+                '<div class="mt-1"><b>Primary Tasks</b><ol style="padding-left:18px;margin-top:4px;">' + (p.memberProfile.primaryTasks || []).map(function(x){return '<li class="text-sm">'+esc(x.name)+'</li>';}).join('') + '</ol></div>' +
+                '<div class="kv-row"><span>Style</span><span>' + esc((p.memberProfile.styleProfile && p.memberProfile.styleProfile.operatingStyle) || '—') + '</span></div>' +
+                '<div class="kv-row"><span>Pipeline</span><span>' + esc((p.memberProfile.pipelineProfile && p.memberProfile.pipelineProfile.position) || '—') + '</span></div>' +
+                '<div class="kv-row"><span>Handoff Targets</span><span>' + esc((p.memberProfile.handoffTargets || []).join(', ') || '—') + '</span></div>' +
+                '<div class="mt-1"><b>Tools (Assigned; not connection/authorization proof)</b><div class="text-xs text-muted">' + esc(((p.memberProfile.toolProfile && p.memberProfile.toolProfile.assignedTools) || []).join('; ') || '—') + '</div></div>' +
+                '<div class="mt-1"><b>Settings</b><div class="text-xs text-muted">' + esc((p.memberProfile.settingsProfile && p.memberProfile.settingsProfile.summary) || '—') + '</div></div>' +
+                '</div>' : '') +
+            ((p.skills || []).length ? '<div class="mt-2"><strong class="text-sm">Skills (' + (p.skills || []).filter(function(s){return s.status === "VERIFIED";}).length + '/' + (p.skills || []).length + ' verified)</strong>' +
+                '<div class="gate-grid mt-2">' + (p.skills || []).map(function(s){return '<div class="gate-item"><div class="gate-head"><div class="gate-name">'+esc(s.name)+'</div><span class="badge '+(s.status === "VERIFIED" ? "badge-active" : "badge-inactive")+'">'+esc(s.status)+'</span></div><div class="gate-desc">'+esc(s.category)+' · Target: '+esc(s.proficiencyTarget)+'</div><div class="gate-meta">Assessment: '+esc(s.assessmentId || 'NOT RECORDED')+'<br>Verifier: '+esc(s.verifier || 'NOT RECORDED')+'<br>Evidence: '+esc((s.evidence || []).length ? (s.evidence || []).length + ' record(s)' : 'NOT RECORDED')+'</div></div>';}).join('') + '</div><div class="text-xs text-muted mt-1">Skill assignment ≠ skill verification. VERIFIED requires assessment + evidence + verifier + timestamp and a current review state.</div></div>' : '') +
             (function () {
                 var ipState = evaluateIdentityProfilesState(p);
                 return '<div class="mt-2"><strong class="text-sm">Identity Profiles (' + ipState.defined + '/' + ipState.total + ')</strong>' +
@@ -270,10 +284,6 @@
                             '<div class="mt-1"><button class="btn btn-outline btn-sm ip-evidence-edit" data-pid="' + esc(p.id) + '" data-key="' + esc(def.key) + '">' + btnLabel + '</button></div></div>';
                     }).join('') + '</div></div>';
             })() +
-            (p.referenceProfile ? '<div class="mt-2"><strong class="text-sm">Reference Profile</strong> ' +
-                '<span class="badge badge-inactive" style="margin-left:4px;">UNVERIFIED</span> ' +
-                '<button class="btn btn-outline btn-sm rp-view" data-pid="' + esc(p.id) + '">View</button>' +
-                '<div class="text-xs text-muted mt-1">From an external source with no known origin — not cross-checked against any CARC evidence.</div></div>' : '') +
             '<div class="mt-2"><strong class="text-sm">Conversations (' + relatedConvs.length + ')</strong><div class="mt-1">' +
             (relatedConvs.length ? relatedConvs.map(function (c) { return '<span class="chip conv-detail-open" data-id="' + c.id + '" style="cursor:pointer;">' + esc(c.title) + '</span>'; }).join('') : '<span class="text-muted text-sm">No conversations yet</span>') +
             '</div></div>';
@@ -303,32 +313,6 @@
         $all('.fp-view').forEach(function (btn) {
             btn.addEventListener('click', function () { openFieldProvenanceModal(btn.getAttribute('data-pid')); });
         });
-        $all('.rp-view').forEach(function (btn) {
-            btn.addEventListener('click', function () { openReferenceProfileModal(btn.getAttribute('data-pid')); });
-        });
-    }
-
-    function openReferenceProfileModal(participantId) {
-        var p = DATA.participants.find(function (x) { return x.id === participantId; });
-        if (!p || !p.referenceProfile) return;
-        var rp = p.referenceProfile;
-        var rows = [
-            ['Authority (narrative)', rp.authorityNarrative],
-            ['Escalation', rp.escalation],
-            ['Default Format', rp.defaultFormat],
-            ['Pipeline Position', rp.pipelinePosition],
-            ['Settings', rp.settings],
-            ['Skills', rp.skills],
-            ['Operating Style', rp.operatingStyle],
-            ['Tools', rp.tools]
-        ];
-        var body = '<p class="text-sm audit-warn">⚠️ UNVERIFIED — extracted from a file found in the repository with no known origin. Not cross-checked against any CARC evidence. Informational only; never used for readiness, authorization, or production gating.</p>' +
-            rows.map(function (r) {
-                return '<div class="mt-1"><b>' + esc(r[0]) + '</b><div class="text-sm text-muted">' + esc(r[1] || '—') + '</div></div>';
-            }).join('') +
-            '<div class="mt-1"><b>Handoff Targets</b><div class="text-sm text-muted">' + ((rp.handoffTargets || []).map(esc).join(', ') || '—') + '</div></div>';
-        openModal('Reference Profile — ' + p.name, body, '<button class="btn btn-outline" id="rpClose">Close</button>');
-        document.getElementById('rpClose').addEventListener('click', closeModal);
     }
 
     function openFieldProvenanceModal(participantId) {

@@ -531,15 +531,9 @@
         var records = (DATA.activityLog || []).filter(function(e) { return e.correlationId; }).map(function(e) {
             return { id: e.correlationId, event: e.event, status: e.status, risk: e.risk || 'NORMAL', contentHash: e.contentHash, occurredAt: e.at };
         });
-        // Unlike roster/roll-calls/chat, which always have seeded data, the command-audit trail
-        // starts genuinely empty until a chat command is issued — an idle install could have zero
-        // entries for a long time. That's not a real failure, so it must not count toward the
-        // auto-sync failure streak (which would otherwise silently disable auto-sync entirely
-        // after 5 idle cycles even though roster/roll-calls/chat sync is working fine).
-        if (!records.length) {
-            if (!silent) { showToast('error', '❌ No command-audit events to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
-            return Promise.resolve({ ok:true, skipped:true, error:'NO_RECORDS' });
-        }
+        // An empty command-audit trail is a valid snapshot, not a sync failure. Send [] so the
+        // runtime can attest that it received the current (empty) stream, record the sync event,
+        // and report Command state CURRENT. This also keeps manual and auto-sync semantics aligned.
         var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;

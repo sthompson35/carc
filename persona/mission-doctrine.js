@@ -149,11 +149,7 @@
             readiness: 'READINESS_UNKNOWN',
             sourceId: r.serviceMemberId,
             aliases: [],
-            legacyIds: [],
-            // Unverified reference material only — see data/reference-profiles.js's file-level
-            // comment for the full provenance disclosure. Never used for readiness/authorization/
-            // production gating, never treated as evidence.
-            referenceProfile: buildReferenceProfile(r.callsign)
+            legacyIds: []
         };
     }
 
