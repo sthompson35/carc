@@ -380,9 +380,9 @@
         }
         var body = '<div class="form-group"><label>Stage</label><input value="' + esc(stage.name) + '" disabled></div>' +
             '<div class="form-group"><label>Evidence Reference</label><textarea id="kpEvidence" rows="4" placeholder="Curriculum ID, exam score reference, certificate ID, approval record…">' + esc(stage.evidence || '') + '</textarea></div>' +
-            '<div class="form-group"><label>Verifier</label><input id="kpVerifier" value="' + esc(stage.verifier || '') + '" placeholder="e.g. instructor, supervisor, reviewer ID"></div>' +
+            '<div class="form-group"><label>Verifier</label><input id="kpVerifier" value="' + esc(stage.verifier || '') + '" placeholder="a real canonical ID or @callsign, e.g. @HELIX"></div>' +
             '<div class="form-group"><label>Status</label><select id="kpStatus"><option value="PENDING">PENDING</option><option value="VERIFIED">VERIFIED</option></select></div>' +
-            '<div class="text-xs text-muted">VERIFIED requires both an evidence reference and a verifier. CARC will not accept a bare status flip.</div>';
+            '<div class="text-xs text-muted">VERIFIED requires a real evidence reference and a verifier who resolves to a real identity — self-verification is refused unless this identity is explicitly policy-authorized for it. Changing evidence or verifier on an already-VERIFIED stage requires a fresh, real re-verification.</div>';
         var footer = '<button class="btn btn-outline" id="kpCancel">Cancel</button><button class="btn btn-primary" id="kpSave">Save Evidence</button>';
         openModal('Knowledge Path — ' + stage.name, body, footer);
         document.getElementById('kpStatus').value = stage.status;
@@ -391,10 +391,18 @@
             var ev = document.getElementById('kpEvidence').value.trim();
             var vr = document.getElementById('kpVerifier').value.trim();
             var st = document.getElementById('kpStatus').value;
-            if (st === 'VERIFIED' && (!ev || !vr)) { showToast('error', '❌ VERIFIED requires evidence and a verifier'); return; }
-            stage.evidence = ev; stage.verifier = vr; stage.status = st; stage.updatedAt = new Date().toISOString();
-            reconcileKnowledgePathEligibility(p);
-            addLog(p.name + ' knowledge path · ' + stage.name + ' → ' + st, 'info');
+            var result = recordKnowledgePathStageEvidence(p, stageId, { status: st, evidence: ev, verifier: vr });
+            if (!result.ok) {
+                var messages = {
+                    COMPETENCY_VERIFICATION_EVIDENCE_REQUIRED: '❌ VERIFIED requires both an evidence reference and a verifier',
+                    VERIFIER_NOT_RECOGNIZED: '❌ Verifier must resolve to a real canonical identity or @callsign',
+                    SELF_VERIFICATION_PROHIBITED: '❌ Self-verification is prohibited for this identity'
+                };
+                showToast('error', messages[result.error] || ('❌ ' + result.error));
+                saveData(); renderAll(); closeModal(); openParticipantDetail(participantId);
+                return;
+            }
+            addLog(p.name + ' knowledge path · ' + stage.name + ' → ' + result.stage.status, 'info');
             saveData(); renderAll();
             closeModal();
             openParticipantDetail(participantId);

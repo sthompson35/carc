@@ -2,13 +2,15 @@
 // tests/persona.knowledge-path.test.js
 
 module.exports = {
-    modules: ['app/util.js', 'data/roster.js', 'persona/mission-doctrine.js', 'persona/knowledge-path.js'],
+    modules: ['app/util.js', 'data/roster.js', 'persona/mission-doctrine.js', 'persona/alias-registry.js', 'persona/member-registry.js', 'persona/knowledge-path.js'],
     run: function (ctx, assert) {
         var buildDefaultKnowledgePath = ctx.buildDefaultKnowledgePath;
         var evaluateKnowledgePathState = ctx.evaluateKnowledgePathState;
         var evaluateMissionEligibilityStage = ctx.evaluateMissionEligibilityStage;
         var reconcileKnowledgePathEligibility = ctx.reconcileKnowledgePathEligibility;
         var knowledgePathRegistryState = ctx.knowledgePathRegistryState;
+        var recordKnowledgePathStageEvidence = ctx.recordKnowledgePathStageEvidence;
+        var rosterToParticipant = ctx.rosterToParticipant;
         var PREREQS = ['competencies', 'curriculum', 'governed_sources', 'tools', 'permissions', 'exercises', 'assessment', 'certification'];
 
         // buildDefaultKnowledgePath
@@ -80,5 +82,42 @@ module.exports = {
         assert(registry.stageBreakdown.length === 10, 'the per-stage breakdown has exactly 10 rows');
         var certRow = registry.stageBreakdown.find(function (r) { return r.id === 'certification'; });
         assert(certRow && certRow.verified === 1, 'the certification stage breakdown counts exactly the one participant who verified it (' + (certRow && certRow.verified) + ')');
+
+        // recordKnowledgePathStageEvidence: real evidence-verification rules, not a bare status flip.
+        var vinnieRoster = ctx.ROSTER.find(function (r) { return r.callsign === '@VINNIE'; });
+        var helixRoster = ctx.ROSTER.find(function (r) { return r.callsign === '@HELIX'; });
+        var subject = rosterToParticipant(vinnieRoster, 0);
+        subject.knowledgePath = buildDefaultKnowledgePath();
+        subject.memberProfile = {};
+        var verifierParticipant = rosterToParticipant(helixRoster, 1);
+        ctx.DATA = { participants: [subject, verifierParticipant] };
+        function subjectStage(id) { return subject.knowledgePath.stages.find(function (s) { return s.id === id; }); }
+
+        var missingBoth = recordKnowledgePathStageEvidence(subject, 'competencies', { status: 'VERIFIED', evidence: '', verifier: '', updatedAt: '2026-01-01T00:00:00.000Z' });
+        assert(missingBoth.ok === false && missingBoth.error === 'COMPETENCY_VERIFICATION_EVIDENCE_REQUIRED', 'empty evidence/verifier is rejected with the spec rejection code, not a silent PENDING save');
+        assert(subjectStage('competencies').status === 'PENDING', 'rejected VERIFIED attempt leaves the stage PENDING, not VERIFIED');
+
+        var unrecognized = recordKnowledgePathStageEvidence(subject, 'competencies', { status: 'VERIFIED', evidence: 'ev-1', verifier: 'Bob the Reviewer', updatedAt: '2026-01-01T00:00:01.000Z' });
+        assert(unrecognized.ok === false && unrecognized.error === 'VERIFIER_NOT_RECOGNIZED', 'a verifier that does not resolve to a real canonical identity is rejected, free text is not accepted as a verifier');
+
+        var selfAttempt = recordKnowledgePathStageEvidence(subject, 'competencies', { status: 'VERIFIED', evidence: 'ev-1', verifier: '@VINNIE', updatedAt: '2026-01-01T00:00:02.000Z' });
+        assert(selfAttempt.ok === false && selfAttempt.error === 'SELF_VERIFICATION_PROHIBITED', 'self-verification is refused when the identity has no maySelfVerify/selfVerificationAllowed policy flag');
+
+        var genuine = recordKnowledgePathStageEvidence(subject, 'competencies', { status: 'VERIFIED', evidence: 'ev-1', verifier: '@HELIX', updatedAt: '2026-01-01T00:00:03.000Z' });
+        assert(genuine.ok === true && genuine.stage.status === 'VERIFIED', 'a real evidence reference plus a real, non-self verifier is genuinely accepted');
+        assert(genuine.stage.verifier === verifierParticipant.serviceMemberId, 'the stored verifier is the resolved canonical ID, not the raw @callsign text typed in');
+        assert(typeof genuine.stage.verifiedAt === 'string' && genuine.stage.verifiedAt.length > 0, 'a real verification stamps a distinct verifiedAt timestamp');
+
+        // Rule 6: editing evidence on an already-VERIFIED stage while the new attempt itself fails
+        // (self-verification here) must drop the stage to PENDING — never silently keep the old
+        // VERIFIED status paired with different evidence than what was actually verified.
+        var mutatedInvalid = recordKnowledgePathStageEvidence(subject, 'competencies', { status: 'VERIFIED', evidence: 'ev-2-different', verifier: '@VINNIE', updatedAt: '2026-01-01T00:00:04.000Z' });
+        assert(mutatedInvalid.ok === false && mutatedInvalid.stage.status === 'PENDING', 'changing evidence on a VERIFIED stage while the new verification attempt itself fails reverts the stage to PENDING, not left VERIFIED with mismatched content');
+        assert(mutatedInvalid.stage.verifiedAt === null, 'reverting to PENDING clears the prior verifiedAt timestamp');
+
+        // Rule 5's policy exception: wire the real (if previously-unread) member-registry flags.
+        subject.memberProfile = { workingAuthorityProfile: { maySelfVerify: true } };
+        var selfAuthorized = recordKnowledgePathStageEvidence(subject, 'competencies', { status: 'VERIFIED', evidence: 'ev-3', verifier: '@VINNIE', updatedAt: '2026-01-01T00:00:05.000Z' });
+        assert(selfAuthorized.ok === true && selfAuthorized.stage.status === 'VERIFIED', 'self-verification succeeds once the real memberProfile.workingAuthorityProfile.maySelfVerify policy flag authorizes it');
     }
 };

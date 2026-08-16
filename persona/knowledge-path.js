@@ -55,25 +55,84 @@
     // The only real mutator for a manually-attested stage (mission_eligibility is computed-only,
     // see reconcileKnowledgePathEligibility). Every change is appended to the stage's own
     // append-only history[] (capped 100) rather than overwritten, so prior evidence/verifier
-    // pairs are never silently lost.
+    // pairs are never silently lost — including rejected attempts, which are auditable too.
+    //
+    // VERIFIED is real verification, not a bare status flip: the verifier must resolve to a real
+    // canonical identity (never free text), self-verification is refused unless this identity's
+    // own real profile explicitly authorizes it (workingAuthorityProfile.maySelfVerify /
+    // governanceLocked.selfVerificationAllowed — both false for every identity today, so this
+    // changes nothing in practice yet, it just wires up data that already existed unread), and
+    // changing evidence/verifier on an already-VERIFIED stage forces a fresh, real re-verification
+    // rather than silently keeping the old VERIFIED status with new content attached to it.
     function recordKnowledgePathStageEvidence(p, stageId, update) {
         update = update || {};
         if (!p || !p.knowledgePath) return { ok: false, error: 'KNOWLEDGE_PATH_NOT_FOUND' };
         var stage = p.knowledgePath.stages.find(function (s) { return s.id === stageId; });
         if (!stage) return { ok: false, error: 'STAGE_NOT_FOUND' };
         if (stage.id === 'mission_eligibility') return { ok: false, error: 'COMPUTED_STAGE_READ_ONLY' };
-        var status = update.status === 'VERIFIED' ? 'VERIFIED' : 'PENDING';
+
+        var requestedStatus = update.status === 'VERIFIED' ? 'VERIFIED' : 'PENDING';
         var evidence = String(update.evidence || '').trim();
-        var verifier = String(update.verifier || '').trim();
-        if (status === 'VERIFIED' && (!evidence || !verifier)) return { ok: false, error: 'VERIFIED_REQUIRES_EVIDENCE_AND_VERIFIER' };
+        var verifierInput = String(update.verifier || '').trim();
         var at = update.updatedAt || new Date().toISOString();
+
+        // A change to evidence/verifier on an already-VERIFIED stage can never silently remain
+        // VERIFIED — the record must drop to PENDING first, so this call either produces a fresh,
+        // real verification below or the stage is honestly PENDING. A resubmission with identical
+        // evidence+verifier is not a mutation and does not trigger this.
+        var contentChanged = stage.status === 'VERIFIED' && (evidence !== stage.evidence || verifierInput !== stage.verifier);
+        var effectiveStatus = contentChanged ? 'PENDING' : stage.status;
+
+        var verifierCanonicalId = null, error = null;
+        if (requestedStatus === 'VERIFIED') {
+            if (!evidence || !verifierInput) {
+                error = 'COMPETENCY_VERIFICATION_EVIDENCE_REQUIRED';
+            } else {
+                var resolvedVerifier = null;
+                try { resolvedVerifier = resolveCanonicalIdentity(verifierInput); } catch (e) { resolvedVerifier = null; }
+                if (!resolvedVerifier) {
+                    error = 'VERIFIER_NOT_RECOGNIZED';
+                } else {
+                    verifierCanonicalId = resolvedVerifier.serviceMemberId || resolvedVerifier.callsign;
+                    var isSelf = !!p.serviceMemberId && resolvedVerifier.serviceMemberId === p.serviceMemberId;
+                    var selfVerifyAuthorized = !!(p.memberProfile && (
+                        (p.memberProfile.workingAuthorityProfile && p.memberProfile.workingAuthorityProfile.maySelfVerify === true) ||
+                        (p.memberProfile.governanceLocked && p.memberProfile.governanceLocked.selfVerificationAllowed === true)
+                    ));
+                    if (isSelf && !selfVerifyAuthorized) error = 'SELF_VERIFICATION_PROHIBITED';
+                }
+            }
+        }
+
+        var finalStatus = error ? (contentChanged ? 'PENDING' : effectiveStatus) : requestedStatus;
+        var accepted = !error && requestedStatus === 'VERIFIED';
+
         stage.history = Array.isArray(stage.history) ? stage.history : [];
+        var evidenceEventId = update.evidenceEventId || ('KP-' + p.serviceMemberId + '-' + stage.id + '-' + String(at).replace(/[^0-9]/g, '').slice(0, 17));
         stage.history.unshift({
-            evidenceEventId: update.evidenceEventId || ('KP-' + p.serviceMemberId + '-' + stage.id + '-' + String(at).replace(/[^0-9]/g, '').slice(0, 17)),
-            previousStatus: stage.status || 'PENDING', status: status, evidence: evidence, verifier: verifier, at: at
+            evidenceEventId: evidenceEventId, previousStatus: stage.status || 'PENDING', status: finalStatus,
+            evidence: evidence, verifier: verifierCanonicalId || verifierInput, at: at,
+            rejected: !!error, rejectionReason: error || null
         });
         if (stage.history.length > 100) stage.history = stage.history.slice(0, 100);
-        stage.status = status; stage.evidence = evidence; stage.verifier = verifier; stage.updatedAt = at;
+
+        if (error) {
+            // Reject the VERIFIED attempt, but a genuine mutation on a previously-VERIFIED stage
+            // still has to fall to PENDING — the old evidence/verifier pairing is no longer honest
+            // even though the new one didn't pass either.
+            stage.status = finalStatus;
+            if (finalStatus !== 'VERIFIED') stage.verifiedAt = null;
+            stage.updatedAt = at;
+            reconcileKnowledgePathEligibility(p);
+            return { ok: false, error: error, stage: stage };
+        }
+
+        stage.status = finalStatus;
+        stage.evidence = evidence;
+        stage.verifier = accepted ? verifierCanonicalId : verifierInput;
+        stage.updatedAt = at;
+        stage.verifiedAt = accepted ? at : null;
+        stage.evidenceEventId = accepted ? evidenceEventId : stage.evidenceEventId;
         reconcileKnowledgePathEligibility(p);
         return { ok: true, stage: stage };
     }

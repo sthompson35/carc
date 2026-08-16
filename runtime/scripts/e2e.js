@@ -473,6 +473,14 @@ async function run() {
 
     // ── 17b. knowledge-path sync round-trip ────────────────────────
     console.log('\n[17b] Knowledge Path sync round-trip');
+    // A VERIFIED record's verifier must resolve against the real synced roster — populate one
+    // real entry for the verifier used below, matching how a genuine deployment would have this
+    // populated via "Sync Roster to Runtime" before anyone could ever be VERIFIED.
+    db.prepare(`
+        INSERT INTO roster (service_member_id, callsign, display_name, kind, agent_id, role, command, readiness, canonical_status, updated_at)
+        VALUES ('ATA-HELIX-000', '@HELIX', 'HELIX', 'AI AGENT', 'ATA-HELIX-000', 'Readiness & Verification', 'Independent Assurance', 'MISSION_READY', 'CANONICAL_RECONCILED', datetime('now'))
+    `).run();
+
     const kpEventId = 'KP-E2E-' + Date.now();
     const kpAt = new Date().toISOString();
     t = await authReq(port, '/api/knowledge-path/sync', 'POST', tmpToken, {
@@ -497,9 +505,36 @@ async function run() {
 
     t = await authReq(port, '/api/sync-status', 'GET', tmpToken);
     data = t.json();
-    assert(data.knowledge_path && data.knowledge_path.state === 'CURRENT', 'sync-status surfaces knowledge_path as CURRENT');
+    assert(data.knowledge_path && data.knowledge_path.state === 'CURRENT', 'sync-status surfaces knowledge_path as CURRENT after a genuine successful sync');
+
+    // A resync of the same evidenceEventId with genuinely different content must be refused, not
+    // silently overwritten — this is what actually makes a VERIFIED event immutable server-side.
+    t = await authReq(port, '/api/knowledge-path/sync', 'POST', tmpToken, {
+        records: [{ evidenceEventId: kpEventId, serviceMemberId: 'ATA-VEX-000', stageId: 'competencies', previousStatus: 'PENDING', status: 'VERIFIED', evidence: 'TAMPERED evidence', verifier: '@HELIX', at: kpAt }]
+    });
+    data = t.json();
+    assert(t.status === 409 && data.error === 'EVIDENCE_EVENT_IMMUTABLE', 'resyncing the same evidenceEventId with different evidence is rejected 409 EVIDENCE_EVENT_IMMUTABLE, not overwritten');
+    const kpUnchangedRow = db.prepare('SELECT evidence FROM knowledge_path_events WHERE id = ?').get(kpEventId);
+    assert(kpUnchangedRow.evidence === 'e2e evidence', 'the rejected resync did not actually mutate the stored evidence');
+
+    // A bare VERIFIED status flip with no real evidence/verifier must fail closed with the spec's
+    // own rejection code.
+    t = await authReq(port, '/api/knowledge-path/sync', 'POST', tmpToken, {
+        records: [{ evidenceEventId: 'KP-E2E-BARE-' + Date.now(), serviceMemberId: 'ATA-VEX-000', stageId: 'curriculum', previousStatus: 'PENDING', status: 'VERIFIED', evidence: '', verifier: '', at: kpAt }]
+    });
+    data = t.json();
+    assert(t.status === 400 && data.error === 'COMPETENCY_VERIFICATION_EVIDENCE_REQUIRED', 'a bare VERIFIED status flip with no evidence/verifier fails closed with the spec rejection code');
+
+    // A verifier that isn't a real, synced roster identity must be refused — free text is not an
+    // authorized canonical ID no matter how plausible it looks.
+    t = await authReq(port, '/api/knowledge-path/sync', 'POST', tmpToken, {
+        records: [{ evidenceEventId: 'KP-E2E-FAKEVERIFIER-' + Date.now(), serviceMemberId: 'ATA-VEX-000', stageId: 'tools', previousStatus: 'PENDING', status: 'VERIFIED', evidence: 'e2e evidence', verifier: '@NOT_A_REAL_IDENTITY', at: kpAt }]
+    });
+    data = t.json();
+    assert(t.status === 400 && data.error === 'VERIFIER_NOT_RECOGNIZED', 'a verifier that does not resolve to any real synced roster identity is rejected, not silently accepted');
 
     db.prepare('DELETE FROM knowledge_path_events WHERE id = ?').run(kpEventId);
+    db.prepare("DELETE FROM roster WHERE service_member_id = 'ATA-HELIX-000'").run();
     console.log('     knowledge-path test record cleaned up (sync_events audit rows intentionally left — append-only trail)');
 
     // ── 17c. Governed Sources + real least-privilege control status ────────────────

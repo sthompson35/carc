@@ -1,5 +1,5 @@
 'use strict';
-module.exports={modules:['persona/knowledge-path.js','app/pages/helpdesk.js'],run:function(ctx,assert){
+module.exports={modules:['persona/alias-registry.js','persona/knowledge-path.js','app/pages/helpdesk.js'],run:function(ctx,assert){
     var t=ctx.helpDeskCreateTicket({subject:'Runtime offline',description:'Health endpoint unavailable',requester:'Operator',category:'RUNTIME',priority:'CRITICAL'},[],new Date('2026-01-01T00:00:00Z'));
     assert(t.id==='HD-0001','first ticket receives deterministic ID');
     assert(t.assignee==='@VICTOR','runtime ticket routes to @VICTOR');
@@ -20,6 +20,7 @@ module.exports={modules:['persona/knowledge-path.js','app/pages/helpdesk.js'],ru
     var rerun=ctx.buildToolReadinessTickets(members,generated.created,new Date('2026-01-01T00:00:00Z'));
     assert(rerun.created.length===0&&rerun.skipped.length===2,'tool ticket generation is idempotent and creates no duplicates');
     var pilotMembers=[{serviceMemberId:'ATA-CINDY-000',callsign:'@CINDY'},{serviceMemberId:'ATA-VICTOR-000',callsign:'@VICTOR'},{serviceMemberId:'ATA-HELIX-000',callsign:'@HELIX'}];
+    ctx.DATA={participants:pilotMembers}; // recordKnowledgePathStageEvidence resolves the verifier against real identities
     var pilot=ctx.buildKnowledgePathPilotTickets(pilotMembers,[],new Date('2026-01-01T00:00:00Z'));
     assert(pilot.created.length===2&&pilot.errors.length===0,'knowledge-path pilot creates exactly two learner tickets');
     assert(pilot.created.every(function(x){return x.status==='OPEN'&&x.knowledgePathPilot.stageId==='competencies'&&x.knowledgePathPilot.state==='EVIDENCE_REQUIRED';}),'pilot tickets collect Competency Baseline evidence without verifying a stage');
@@ -40,5 +41,5 @@ module.exports={modules:['persona/knowledge-path.js','app/pages/helpdesk.js'],ru
     ctx.submitKnowledgePathPilotEvidence(pt,evidence,new Date('2026-01-01T04:00:00Z'));
     var approved=ctx.reviewKnowledgePathPilotEvidence(pt,'APPROVE','@HELIX','Evidence complete',learner,new Date('2026-01-01T05:00:00Z'));
     assert(approved.ok&&approved.verified&&pt.status==='RESOLVED','@HELIX approval resolves the pilot ticket');
-    assert(learner.knowledgePath.stages[0].status==='VERIFIED'&&learner.knowledgePath.stages[0].verifier==='@HELIX','approved complete evidence verifies only the targeted Competency Baseline stage');
+    assert(learner.knowledgePath.stages[0].status==='VERIFIED'&&learner.knowledgePath.stages[0].verifier==='ATA-HELIX-000','approved complete evidence verifies only the targeted Competency Baseline stage, storing the resolved canonical verifier ID');
 }};
