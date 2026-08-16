@@ -364,6 +364,20 @@ async function run() {
     const cmdRow = (data.rows || []).find(r => r.id === cmdId);
     assert(!!cmdRow && cmdRow.risk === 'ROSTER_WIDE' && cmdRow.contentHash === 'deadbeef', 'GET /api/commands reflects the synced event');
 
+    // schema-24 columns: richer verification-batch evidence (batchId/serviceMemberId/executionId/
+    // verifierId/signature/outcome) must round-trip too, not just the original 5 fields.
+    const cmdId2 = 'CMD-E2E-BATCH-' + Date.now();
+    t = await authReq(port, '/api/commands/sync', 'POST', tmpToken, {
+        records: [{ id: cmdId2, event: '@VEX external verification PASS', status: 'success', risk: 'ROSTER_WIDE', occurredAt: cmdAt, batchId: 'BATCH-E2E-1', serviceMemberId: 'ATA-VEX-000', executionId: 'EXEC-E2E-1', verifierId: 'EXTERNAL_VERIFIER', signature: 'sig-e2e', outcome: 'PASS' }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.inserted === 1, 'POST /api/commands/sync accepts the schema-24 evidence columns');
+    t = await authReq(port, '/api/commands?limit=100', 'GET', tmpToken);
+    data = t.json();
+    const cmdRow2 = (data.rows || []).find(r => r.id === cmdId2);
+    assert(!!cmdRow2 && cmdRow2.batchId === 'BATCH-E2E-1' && cmdRow2.serviceMemberId === 'ATA-VEX-000' && cmdRow2.executionId === 'EXEC-E2E-1' && cmdRow2.verifierId === 'EXTERNAL_VERIFIER' && cmdRow2.signature === 'sig-e2e' && cmdRow2.outcome === 'PASS', 'GET /api/commands reflects all 6 batch-verification evidence columns');
+    db.prepare('DELETE FROM command_audit_events WHERE id = ?').run(cmdId2);
+
     // idempotency: resubmitting the identical event must not mutate it
     t = await authReq(port, '/api/commands/sync', 'POST', tmpToken, {
         records: [{ id: cmdId, event: 'e2e command audit drill', status: 'warning', risk: 'ROSTER_WIDE', contentHash: 'deadbeef', occurredAt: cmdAt }]
@@ -447,6 +461,37 @@ async function run() {
     db.prepare('DELETE FROM handoffs WHERE id = ?').run(handoffId);
     db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
     console.log('     task/handoff test records cleaned up (sync_events audit rows intentionally left — append-only trail)');
+
+    // ── 17b. knowledge-path sync round-trip ────────────────────────
+    console.log('\n[17b] Knowledge Path sync round-trip');
+    const kpEventId = 'KP-E2E-' + Date.now();
+    const kpAt = new Date().toISOString();
+    t = await authReq(port, '/api/knowledge-path/sync', 'POST', tmpToken, {
+        records: [{ evidenceEventId: kpEventId, serviceMemberId: 'ATA-VEX-000', stageId: 'competencies', previousStatus: 'PENDING', status: 'VERIFIED', evidence: 'e2e evidence', verifier: '@HELIX', at: kpAt }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.synced === 1 && data.inserted === 1, 'POST /api/knowledge-path/sync → 1 record inserted');
+    assert(typeof data.executionId === 'string' && data.executionId.startsWith('SYNC-KNOWLEDGE_PATH-'), 'knowledge-path sync response carries a knowledge_path-scoped executionId');
+
+    t = await authReq(port, '/api/knowledge-path?serviceMemberId=ATA-VEX-000&limit=100', 'GET', tmpToken);
+    data = t.json();
+    const kpRow = (data.rows || []).find(r => r.evidenceEventId === kpEventId);
+    assert(!!kpRow && kpRow.stageId === 'competencies' && kpRow.verifier === '@HELIX', 'GET /api/knowledge-path?serviceMemberId= reflects the synced event');
+
+    t = await authReq(port, '/api/knowledge-path/sync', 'POST', tmpToken, {
+        records: [{ evidenceEventId: kpEventId, serviceMemberId: 'ATA-VEX-000', stageId: 'competencies', previousStatus: 'PENDING', status: 'VERIFIED', evidence: 'e2e evidence', verifier: '@HELIX', at: kpAt }]
+    });
+    data = t.json();
+    assert(t.status === 200 && data.inserted === 0 && data.updated === 0 && data.unchanged === 1, 'repeat knowledge-path sync → 0 inserted, 0 updated, 1 unchanged (idempotent — each evidenceEventId is immutable)');
+    const kpCountAfter = db.prepare('SELECT COUNT(*) AS n FROM knowledge_path_events WHERE id = ?').get(kpEventId).n;
+    assert(kpCountAfter === 1, 'repeat knowledge-path sync does not duplicate the row');
+
+    t = await authReq(port, '/api/sync-status', 'GET', tmpToken);
+    data = t.json();
+    assert(data.knowledge_path && data.knowledge_path.state === 'CURRENT', 'sync-status surfaces knowledge_path as CURRENT');
+
+    db.prepare('DELETE FROM knowledge_path_events WHERE id = ?').run(kpEventId);
+    console.log('     knowledge-path test record cleaned up (sync_events audit rows intentionally left — append-only trail)');
 
     // ── 18. revoke temp token; confirm 403 ───────────────────────
     console.log('\n[18] Revoke temp token → confirm 403');

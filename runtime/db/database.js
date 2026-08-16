@@ -167,6 +167,21 @@ function initDb() {
 
         CREATE INDEX IF NOT EXISTS idx_handoffs_task  ON handoffs(task_id);
         CREATE INDEX IF NOT EXISTS idx_handoffs_state ON handoffs(state);
+
+        CREATE TABLE IF NOT EXISTS knowledge_path_events (
+            id                 TEXT    PRIMARY KEY,
+            service_member_id  TEXT    NOT NULL,
+            stage_id           TEXT    NOT NULL,
+            previous_status    TEXT,
+            status             TEXT,
+            evidence           TEXT,
+            verifier           TEXT,
+            occurred_at        TEXT,
+            synced_at          TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_kp_events_svc   ON knowledge_path_events(service_member_id);
+        CREATE INDEX IF NOT EXISTS idx_kp_events_stage ON knowledge_path_events(stage_id);
     `);
 
     // Migration: sync_events predates execution_id (added for cross-referencing a sync
@@ -176,6 +191,17 @@ function initDb() {
         d.exec('ALTER TABLE sync_events ADD COLUMN execution_id TEXT');
     }
     d.exec('CREATE INDEX IF NOT EXISTS idx_sync_events_exec ON sync_events(execution_id)');
+
+    // Migration: command_audit_events predates roster-wide verification-batch and knowledge-path
+    // pilot events (schema 24/28 on the frontend) — those events carry richer evidence than a
+    // plain command audit row (which identity, which execution, which verifier, pass/fail/etc).
+    // These columns let that evidence reach durable storage instead of being dropped at sync time.
+    const cmdCols = d.prepare("PRAGMA table_info(command_audit_events)").all().map(function (c) { return c.name; });
+    ['batch_id', 'service_member_id', 'execution_id', 'verifier_id', 'signature', 'outcome'].forEach(function (col) {
+        if (cmdCols.indexOf(col) === -1) d.exec('ALTER TABLE command_audit_events ADD COLUMN ' + col + ' TEXT');
+    });
+    d.exec('CREATE INDEX IF NOT EXISTS idx_cmd_audit_batch ON command_audit_events(batch_id)');
+    d.exec('CREATE INDEX IF NOT EXISTS idx_cmd_audit_svc   ON command_audit_events(service_member_id)');
 
     return d;
 }

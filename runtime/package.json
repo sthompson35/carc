@@ -10,6 +10,7 @@
     "token": "node scripts/token.js",
     "smoke": "node scripts/smoke.js",
     "e2e": "node scripts/e2e.js",
+    "benchmark": "node scripts/benchmark.js",
     "seed-roster": "node scripts/seed-roster.js",
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
@@ -21,9 +22,11 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.6.0",
+    "compression": "^1.8.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "express-rate-limit": "^7.4.1"
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.3.0"
   },
   "allowScripts": {
     "better-sqlite3@11.10.0": true

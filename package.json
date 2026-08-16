@@ -4,6 +4,7 @@
   "scripts": {
     "test": "node tests/run.js",
     "wsl:verify": "bash scripts/wsl/verify-wsl.sh",
+    "wsl:verify-runtime": "bash scripts/wsl/verify-runtime.sh",
     "wsl:frontend": "bash scripts/wsl/start-frontend.sh",
     "wsl:runtime": "bash scripts/wsl/start-runtime.sh",
     "wsl:start": "bash scripts/wsl/start-all.sh"

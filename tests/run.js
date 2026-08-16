@@ -11,14 +11,21 @@ const ROOT = path.join(__dirname, '..');
 
 function makeContext() {
     const store = {};
+    const sessionStore = {};
     const localStorage = {
         getItem: function (k) { return k in store ? store[k] : null; },
         setItem: function (k, v) { store[k] = String(v); },
         removeItem: function (k) { delete store[k]; }
     };
+    const sessionStorage = {
+        getItem: function (k) { return k in sessionStore ? sessionStore[k] : null; },
+        setItem: function (k, v) { sessionStore[k] = String(v); },
+        removeItem: function (k) { delete sessionStore[k]; }
+    };
     const sandbox = {
         console: console,
         localStorage: localStorage,
+        sessionStorage: sessionStorage,
         document: {
             getElementById: function () { return null; },
             querySelector: function () { return null; },

@@ -292,11 +292,12 @@
                     '<button class="btn btn-outline btn-sm" id="btnSyncCommands"'+(configured?'':' disabled')+'>🛡️ Sync Commands to Runtime</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnSyncTasks"'+(configured?'':' disabled')+'>🗂️ Sync Tasks to Runtime</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnSyncHandoffs"'+(configured?'':' disabled')+'>🤝 Sync Handoffs to Runtime</button>'+
+                    '<button class="btn btn-outline btn-sm" id="btnSyncKnowledgePath"'+(configured?'':' disabled')+'>🧭 Sync Knowledge Path to Runtime</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnRegisterSource"'+(configured?'':' disabled')+'>📇 Register Source</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnRefreshControls"'+(configured?'':' disabled')+'>🧾 Refresh Controls</button>'+
                     (configured && (ep.url.startsWith('http://')||ep.url.startsWith('https://')) ? '<a href="'+esc(ep.url)+'/admin" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">🌐 Open Admin</a>' : '')+
                 '</div>'+
-                '<div class="text-xs text-muted mt-1">Bearer token is stored in browser localStorage only — never included in evidence exports. Auto-sync mutates runtime state on a timer once enabled — off by default.</div>';
+                '<div class="text-xs text-muted mt-1">Bearer token is stored in browser sessionStorage only — cleared when the tab closes, never included in evidence exports. Auto-sync mutates runtime state on a timer once enabled — off by default.</div>';
             document.getElementById('btnConfigEndpoint').addEventListener('click', openEndpointConfigModal);
             if (configured) document.getElementById('btnTestEndpoint').addEventListener('click', testEndpointConnection);
             if (canSubmit) document.getElementById('btnSubmitVerification').addEventListener('click', submitForExternalVerification);
@@ -306,6 +307,7 @@
             if (configured) document.getElementById('btnSyncCommands').addEventListener('click', function(){ syncChatCommandsToRuntime(); });
             if (configured) document.getElementById('btnSyncTasks').addEventListener('click', function(){ syncTasksToRuntime(); });
             if (configured) document.getElementById('btnSyncHandoffs').addEventListener('click', function(){ syncHandoffsToRuntime(); });
+            if (configured) document.getElementById('btnSyncKnowledgePath').addEventListener('click', function(){ syncKnowledgePathHistoryToRuntime(); });
             if (configured) document.getElementById('btnRegisterSource').addEventListener('click', openGovernedSourceModal);
             if (configured) document.getElementById('btnRefreshControls').addEventListener('click', function(){ refreshRuntimeControlEvidence(); });
             document.getElementById('chkAutoSync').addEventListener('change', function(e){ toggleAutoSync(e.target.checked); });
@@ -327,11 +329,11 @@
 
     function openEndpointConfigModal() {
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
-        var storedToken = ''; try { storedToken = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var storedToken = ''; try { storedToken = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var body =
             '<div class="form-group"><label>Runtime Endpoint URL</label><input id="epUrl" value="'+esc(ep.url||'')+'" placeholder="https://runtime.example.com/verify"></div>'+
             '<div class="form-group"><label>Bearer Token</label><input type="password" id="epToken" value="'+esc(storedToken)+'" placeholder="Enter bearer token (leave blank to clear)"></div>'+
-            '<div class="text-xs text-muted">URL and token are stored in <code>localStorage</code> only. The token is never included in any evidence export.</div>';
+            '<div class="text-xs text-muted">The endpoint URL is stored with the rest of your data in <code>localStorage</code>. The token is kept separately in <code>sessionStorage</code> — cleared when this tab closes — and never included in any evidence export.</div>';
         openModal('Configure External Runtime Endpoint', body, '<button class="btn btn-outline" id="epCancel">Cancel</button><button class="btn btn-primary" id="epSave">Save</button>');
         document.getElementById('epCancel').addEventListener('click', closeModal);
         document.getElementById('epSave').addEventListener('click', function() {
@@ -341,8 +343,8 @@
             DATA.governance.endpoint = DATA.governance.endpoint || {};
             DATA.governance.endpoint.url = url;
             DATA.governance.endpoint.tokenSet = !!token;
-            if (token) { try { localStorage.setItem('carc_endpoint_token', token); } catch(e) {} }
-            else { try { localStorage.removeItem('carc_endpoint_token'); } catch(e) {} }
+            if (token) { try { sessionStorage.setItem('carc_endpoint_token', token); } catch(e) {} }
+            else { try { sessionStorage.removeItem('carc_endpoint_token'); } catch(e) {} }
             addGovernanceLedger('endpoint', 'Runtime endpoint ' + (url ? 'configured: ' + url : 'cleared'));
             saveData(); renderGovernancePage(); closeModal();
             showToast('success', '✅ Endpoint configuration saved');
@@ -353,7 +355,7 @@
     function testEndpointConnection() {
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
         if (!ep.url) { showToast('error', '❌ No endpoint URL configured'); return; }
-        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         var testBtn = document.getElementById('btnTestEndpoint');
@@ -385,7 +387,7 @@
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
         if (!ep.url) { if (!opts.silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ok:false,error:'NO_ENDPOINT'}); }
         if (!rc.lastExecutionId) { if (!opts.silent) showToast('error', '❌ No canary execution to verify'); return Promise.resolve({ok:false,error:'NO_EXECUTION'}); }
-        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var submitBtn = document.getElementById('btnSubmitVerification');
         if (submitBtn) submitBtn.disabled = true;
         var headers = { 'Content-Type': 'application/json' };
@@ -451,7 +453,7 @@
     }
 
     function endpointAuthHeaders() {
-        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type':'application/json' };
         if (token) headers.Authorization = 'Bearer ' + token;
         return headers;
@@ -635,7 +637,7 @@
             return { id: r.id, date: r.date, conv: r.conv, present: r.present, total: r.total, rate: r.rate, status: r.status, message: r.message, responseMode: r.responseMode };
         });
         if (!records.length) { if (!silent) showToast('error', '❌ No roll calls to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
-        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         var base = ep.url.replace(/\/+$/, '');
@@ -676,7 +678,7 @@
             return { id: m.id, role: m.role, text: m.text, occurredAt: m.at };
         });
         if (!records.length) { if (!silent) showToast('error', '❌ No chat messages to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
-        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         var base = ep.url.replace(/\/+$/, '');
@@ -714,12 +716,13 @@
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
         if (!ep.url) { if (!silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ ok:false, error:'NO_ENDPOINT' }); }
         var records = (DATA.activityLog || []).filter(function(e) { return e.correlationId; }).map(function(e) {
-            return { id: e.correlationId, event: e.event, status: e.status, risk: e.risk || 'NORMAL', contentHash: e.contentHash, occurredAt: e.at };
+            return { id: e.correlationId, event: e.event, status: e.status, risk: e.risk || 'NORMAL', contentHash: e.contentHash, occurredAt: e.at,
+                batchId: e.batchId, serviceMemberId: e.serviceMemberId, executionId: e.executionId, verifierId: e.verifierId, signature: e.signature, outcome: e.outcome };
         });
         // An empty command-audit trail is a valid snapshot, not a sync failure. Send [] so the
         // runtime can attest that it received the current (empty) stream, record the sync event,
         // and report Command state CURRENT. This also keeps manual and auto-sync semantics aligned.
-        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         var base = ep.url.replace(/\/+$/, '');
@@ -760,7 +763,7 @@
             return { serviceMemberId: p.serviceMemberId, status: p.status, readiness: p.readiness, missionProfile: p.missionProfile };
         });
         if (!records.length) { if (!silent) showToast('error', '❌ No roster records to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
-        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         var base = ep.url.replace(/\/+$/, '');
@@ -806,7 +809,7 @@
             if (!silent) { showToast('error', '❌ No tasks to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
             return Promise.resolve({ ok:true, skipped:true, error:'NO_RECORDS' });
         }
-        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         var base = ep.url.replace(/\/+$/, '');
@@ -850,7 +853,7 @@
             if (!silent) { showToast('error', '❌ No handoffs to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
             return Promise.resolve({ ok:true, skipped:true, error:'NO_RECORDS' });
         }
-        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         var base = ep.url.replace(/\/+$/, '');
@@ -908,6 +911,61 @@
         autoSyncTimer = setTimeout(runAutoSyncCycle, delay);
     }
 
+    // Flattens every participant's knowledge-path stage history[] (append-only, per-stage,
+    // added in the schema-26/27 reconciliation) into one wire array of individually-idempotent
+    // events keyed by evidenceEventId — this is the durable long-term record localStorage was
+    // never designed to keep (activityLog caps at 500; stage history caps at 100/stage locally,
+    // but the runtime table has no cap at all).
+    function syncKnowledgePathHistoryToRuntime(opts) {
+        opts = opts || {};
+        var initiator = opts.initiator === 'auto' ? 'auto' : 'manual';
+        var silent = !!opts.silent;
+        var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (!ep.url) { if (!silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ ok:false, error:'NO_ENDPOINT' }); }
+        var records = [];
+        (DATA.participants || []).filter(function(p){ return !!p.serviceMemberId; }).forEach(function(p) {
+            ((p.knowledgePath && p.knowledgePath.stages) || []).forEach(function(s) {
+                (s.history || []).forEach(function(h) {
+                    records.push({ evidenceEventId: h.evidenceEventId, serviceMemberId: p.serviceMemberId, stageId: s.id, previousStatus: h.previousStatus, status: h.status, evidence: h.evidence, verifier: h.verifier, at: h.at });
+                });
+            });
+        });
+        // Same non-failure "skipped" handling as tasks/handoffs — no stage evidence has been
+        // recorded yet on a fresh install, and that's a valid state, not a sync failure.
+        if (!records.length) {
+            if (!silent) { showToast('error', '❌ No knowledge-path history to sync'); return Promise.resolve({ ok:false, error:'NO_RECORDS' }); }
+            return Promise.resolve({ ok:true, skipped:true, error:'NO_RECORDS' });
+        }
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        var base = ep.url.replace(/\/+$/, '');
+        var btn = silent ? null : document.getElementById('btnSyncKnowledgePath');
+        if (btn) { btn.disabled = true; btn.textContent = '…'; }
+        var ctrl = new AbortController();
+        var tid = setTimeout(function(){ ctrl.abort(); }, 15000);
+        return fetch(base + '/api/knowledge-path/sync', { method:'POST', headers:headers, body: JSON.stringify({ records: records, initiator: initiator }), signal: ctrl.signal })
+            .then(function(r) { return r.json().then(function(d){ return { ok:r.ok, status:r.status, data:d }; }); })
+            .then(function(res) {
+                clearTimeout(tid);
+                if (!res.ok) throw new Error((res.data && (res.data.reason || res.data.error)) || ('HTTP ' + res.status));
+                ep.lastKnowledgePathSync = { syncedAt: res.data.syncedAt, synced: res.data.synced, submitted: res.data.submitted, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Knowledge path sync → ' + res.data.inserted + ' inserted, ' + res.data.updated + ' updated, ' + res.data.unchanged + ' unchanged');
+                saveData(); renderGovernancePage();
+                if (!silent) showToast('success', '✅ Synced ' + res.data.synced + '/' + res.data.submitted + ' knowledge-path event(s)');
+                return { ok:true, data:res.data };
+            })
+            .catch(function(err) {
+                clearTimeout(tid);
+                var msg = (err && err.name === 'AbortError') ? 'timeout after 15s' : (err.message || 'network error');
+                ep.lastKnowledgePathSyncError = { at: new Date().toISOString(), message: msg, initiator: initiator };
+                addGovernanceLedger('endpoint', (initiator === 'auto' ? '[auto] ' : '') + 'Knowledge path sync failed: ' + msg);
+                saveData(); renderGovernancePage();
+                if (!silent) showToast('error', '❌ Knowledge path sync failed: ' + msg);
+                return { ok:false, error:msg };
+            });
+    }
+
     function runAutoSyncCycle() {
         var as = autoSyncSettings();
         if (!as.enabled) return;
@@ -919,7 +977,8 @@
             syncChatToRuntime({ initiator: 'auto', silent: true }),
             syncChatCommandsToRuntime({ initiator: 'auto', silent: true }),
             syncTasksToRuntime({ initiator: 'auto', silent: true }),
-            syncHandoffsToRuntime({ initiator: 'auto', silent: true })
+            syncHandoffsToRuntime({ initiator: 'auto', silent: true }),
+            syncKnowledgePathHistoryToRuntime({ initiator: 'auto', silent: true })
         ]).then(function(results) {
             var failed = results.filter(function(r) { return !r.ok; });
             if (failed.length) {

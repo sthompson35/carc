@@ -13,7 +13,13 @@ function rowToJson(row) {
         risk: row.risk,
         contentHash: row.content_hash,
         occurredAt: row.occurred_at,
-        syncedAt: row.synced_at
+        syncedAt: row.synced_at,
+        batchId: row.batch_id,
+        serviceMemberId: row.service_member_id,
+        executionId: row.execution_id,
+        verifierId: row.verifier_id,
+        signature: row.signature,
+        outcome: row.outcome
     };
 }
 
@@ -56,13 +62,15 @@ router.post('/api/commands/sync', requireBearer, function (req, res) {
     }
 
     const now = new Date().toISOString();
-    const getExisting = db.prepare('SELECT event, status, risk, content_hash, occurred_at FROM command_audit_events WHERE id = ?');
+    const getExisting = db.prepare('SELECT event, status, risk, content_hash, occurred_at, batch_id, service_member_id, execution_id, verifier_id, signature, outcome FROM command_audit_events WHERE id = ?');
     const upsert = db.prepare(`
-        INSERT INTO command_audit_events (id, event, status, risk, content_hash, occurred_at, synced_at)
-        VALUES (@id, @event, @status, @risk, @contentHash, @occurredAt, @syncedAt)
+        INSERT INTO command_audit_events (id, event, status, risk, content_hash, occurred_at, synced_at, batch_id, service_member_id, execution_id, verifier_id, signature, outcome)
+        VALUES (@id, @event, @status, @risk, @contentHash, @occurredAt, @syncedAt, @batchId, @serviceMemberId, @executionId, @verifierId, @signature, @outcome)
         ON CONFLICT(id) DO UPDATE SET
             event = excluded.event, status = excluded.status, risk = excluded.risk,
-            content_hash = excluded.content_hash, occurred_at = excluded.occurred_at, synced_at = excluded.synced_at
+            content_hash = excluded.content_hash, occurred_at = excluded.occurred_at, synced_at = excluded.synced_at,
+            batch_id = excluded.batch_id, service_member_id = excluded.service_member_id, execution_id = excluded.execution_id,
+            verifier_id = excluded.verifier_id, signature = excluded.signature, outcome = excluded.outcome
     `);
 
     let insertedCount = 0, updatedCount = 0, unchangedCount = 0, errorMessage = null;
@@ -76,13 +84,22 @@ router.post('/api/commands/sync', requireBearer, function (req, res) {
                 risk: r.risk || null,
                 contentHash: r.contentHash || null,
                 occurredAt: r.occurredAt || null,
-                syncedAt: now
+                syncedAt: now,
+                batchId: r.batchId || null,
+                serviceMemberId: r.serviceMemberId || null,
+                executionId: r.executionId || null,
+                verifierId: r.verifierId || null,
+                signature: r.signature || null,
+                outcome: r.outcome || null
             };
             upsert.run(rec);
             if (!existing) { insertedCount++; continue; }
             const changed = existing.event !== rec.event || existing.status !== rec.status
                 || existing.risk !== rec.risk || existing.content_hash !== rec.contentHash
-                || existing.occurred_at !== rec.occurredAt;
+                || existing.occurred_at !== rec.occurredAt
+                || existing.batch_id !== rec.batchId || existing.service_member_id !== rec.serviceMemberId
+                || existing.execution_id !== rec.executionId || existing.verifier_id !== rec.verifierId
+                || existing.signature !== rec.signature || existing.outcome !== rec.outcome;
             if (changed) updatedCount++; else unchangedCount++;
         }
     });

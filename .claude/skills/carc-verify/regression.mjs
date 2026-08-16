@@ -163,6 +163,35 @@ export default async function run(page) {
     const bubblesAfter2 = await page.locator('.chat-bubble').count();
     check(bubblesAfter2 > bubblesBefore2, 'multi-target @VEX @MAPE chat appends response bubble(s)');
 
+    // Agent Chat text-command sync: "assign task"/"hand off task" go through chat-router.js's
+    // tryAgentCommand parser — a different code path than the "+ New Task" button tested later,
+    // and hand-off specifically exercises the same requiresApproval()/confirm() gate as broadcast.
+    {
+        const bubblesBeforeAssign = await page.locator('.chat-bubble').count();
+        await chatInput.fill('assign task e2e regression chat-command task to @SALLY');
+        if (await sendBtn.count()) await sendBtn.click(); else await chatInput.press('Enter');
+        await page.waitForTimeout(800);
+        const assignReply = await page.locator('.chat-bubble').last().innerText().catch(() => '');
+        check(/assigned to @SALLY/i.test(assignReply), '"assign task ... to @X" chat command creates and assigns a task');
+        check((await page.locator('.chat-bubble').count()) > bubblesBeforeAssign, 'assign-task chat command appends reply bubble(s)');
+        const chatTaskId = (assignReply.match(/TASK-[A-Z0-9-]+/) || [])[0];
+        check(!!chatTaskId, 'assign-task reply carries a real TASK-#### id (' + chatTaskId + ')');
+
+        if (chatTaskId) {
+            const onHandoffDialog = async (dialog) => {
+                check(new RegExp(chatTaskId).test(dialog.message()) && /@MAPE/.test(dialog.message()), 'hand-off triggers a native confirm() dialog naming the task id and target callsign');
+                await dialog.accept();
+            };
+            page.on('dialog', onHandoffDialog);
+            await chatInput.fill('hand off task ' + chatTaskId + ' to @MAPE');
+            if (await sendBtn.count()) await sendBtn.click(); else await chatInput.press('Enter');
+            await page.waitForTimeout(800);
+            page.off('dialog', onHandoffDialog);
+            const handoffReply = await page.locator('.chat-bubble').last().innerText().catch(() => '');
+            check(/HANDOFF-[A-Z0-9-]+ created/i.test(handoffReply), 'accepted hand-off chat command creates a real handoff (' + handoffReply + ')');
+        }
+    }
+
     // Command governance: a roster-wide broadcast is gated behind a native confirm() dialog
     // (participants.js's bulk-delete pattern, reused here) — a different Playwright mechanism
     // (page.on('dialog')) than the custom #modalOverlay handled above for the roll-call button.
