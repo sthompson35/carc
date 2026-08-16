@@ -913,31 +913,104 @@ is fully tested, but has no real bad data to flag yet.
 
 ## External Runtime (optional)
 
-`runtime/` is a small, real Express + SQLite server — *not* part of the
-single-file CARC app, and not required to use it. It exists purely to answer
-the Governance page's **External Runtime Endpoint** panel honestly: local
-canary runs are marked `NOT_RUNTIME_VERIFIED` unless a real, separate server
-independently verifies them, and this is that server.
+`runtime/` is a small, real Express + better-sqlite3 server — *not* part of
+the single-file CARC app, and not required to use it. `file:///C:/carc/index.html`
+must always work with zero server running; that invariant has never been
+broken and is re-checked in live browser regression every release. The
+runtime exists purely to answer the Governance page's **External Runtime
+Endpoint** panel honestly: local canary runs are marked `NOT_RUNTIME_VERIFIED`
+unless a real, separate server independently verifies them, and this is that
+server.
 
 ```
 cd runtime
 npm install          # already done if node_modules/ is present
-cp .env.example .env # already done if .env is present — edit PORT if needed
-npm run setup        # creates the SQLite DB + prints a one-time bearer token
-npm start             # starts the server (default port 3000; this repo's .env uses 3001)
+cp .env.example .env # already done if .env is present — edit PORT/HOST/CORS_ORIGIN if needed
+npm run setup        # creates the SQLite DB + prints a one-time admin-scoped bearer token
+npm start             # starts the server on the PORT your .env specifies (default 3000)
 ```
 
-Paste the printed token and the server URL (e.g. `http://localhost:3001/`)
+### Two ways to open CARC, and how they reach the runtime
+
+```
+ ┌────────────────────────────────┐
+ │ file:///C:/carc/index.html     │  Always works, zero server, the one thing
+ │ (DATA lives in localStorage)   │  that must never break.
+ └───────────────┬─────────────────┘
+                 │  Origin: null on every fetch() to the runtime
+                 │  → the CORS allowlist never matches it (by design —
+                 │    'null' is spoofable by any sandboxed iframe)
+                 ▼
+        Dashboard still loads and works standalone.
+        Sync / verification / admin-panel calls to the
+        runtime are silently refused by the browser.
+
+ ┌──────────────────────────────────────────┐
+ │ http://127.0.0.1:<PORT>/dashboard/        │  Same origin as the API → full
+ │ (served by runtime/server.js, gzip'd,     │  backend connectivity. Recommended
+ │  Helmet CSP headers, same DATA model)     │  whenever you actually want sync.
+ └───────────────────┬──────────────────────┘
+                      │ same-origin fetch()
+                      ▼
+```
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  runtime/server.js  —  Express + better-sqlite3 (runtime/data/carc.db, WAL)  │
+│  Helmet (CSP, no unsafe-inline for scripts) · gzip · CORS allowlist          │
+│  60 req/min limiter (skipped for /dashboard/* static assets)                 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  GET  /health  ·  GET/HEAD /  ·  POST /  (canary → HMAC-signed verification) │
+│  /api/roster  /api/roll-calls  /api/chat  /api/commands                      │
+│  /api/tasks   /api/handoffs   /api/knowledge-path                            │
+│      — each: GET (read) + POST .../sync (idempotent batch push from browser) │
+│  /api/sources  ·  /api/sources/:id/access  ·  /api/governance/control-status │
+│  /api/tokens  (admin scope only)  ·  /api/stats  ·  /api/verifications       │
+│  /api/admin/backup, /api/admin/backups  ·  /api/sync-events, /sync-status    │
+│  GET /admin  (separate small built-in dashboard over the verification log)   │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Paste the printed token and the server URL (e.g. `http://127.0.0.1:3002`)
 into Governance → **⚙️ Configure**, then **🔌 Test** to confirm connectivity
 and **📤 Submit for Verification** after running a local canary. A genuine
 `RUNTIME_VERIFIED` response only ever comes from this server actually
-running — CARC never fabricates one.
+running — CARC never fabricates one. The token itself lives in the browser's
+`sessionStorage` (cleared per tab on close, not persistent `localStorage`) —
+re-paste it if you open a new tab.
 
-Routes: `GET /health`, `HEAD /` (connectivity test), `POST /` (bearer-auth'd
-verification submission), `GET/POST/DELETE /api/tokens`, `GET
-/api/verifications`, `GET /api/stats`, `GET /admin` (a small dashboard over
-the verification log). `npm run smoke` runs a fast route/auth-guard check;
-`npm run e2e` exercises the full submit → verify → duplicate-detection flow.
+### Token scopes — real least-privilege, not cosmetic
+
+```
+ Bearer token ──▶ SHA-256 hash ──▶ tokens table ──▶ scope: 'admin' | 'standard'
+                                                              │
+                 ┌────────────────────────────────────────────┴──────────────────────┐
+                 │                                                                     │
+          scope = 'admin'                                                    scope = 'standard'
+   (first/"default" token from                                        (everything minted afterward,
+    `npm run setup` only)                                              via token.js or the API, unless
+                 │                                                     admin explicitly requested)
+   ✓ everything a standard                                                     │
+     token can do                                             ✓ roster/roll-call/chat/command/task/
+   ✓ GET/POST/DELETE /api/tokens                                 handoff/knowledge-path sync
+     (create/list/revoke tokens)                               ✓ POST /  (canary verification)
+                                                                 ✓ /api/sources, /api/governance/control-status
+                                                                 ✗ /api/tokens → 403 FORBIDDEN — and that
+                                                                   denial is itself the retained evidence
+                                                                   GET /api/governance/control-status uses
+                                                                   to mark `enforcedPermissions` VERIFIED
+```
+
+`npm run smoke` runs a fast route/auth-guard check across every endpoint
+above; `npm run e2e` exercises full round-trips (submit → verify →
+duplicate-detection, every `/sync` route idempotency, source registration →
+access validation → control-status, admin-vs-standard scope denial) against
+an ephemeral port and an isolated temporary database — never the real
+`runtime/data/carc.db`. `bash scripts/wsl/verify-runtime.sh` (or
+`npm run wsl:verify-runtime`) runs the same smoke+e2e suite natively inside
+WSL, in its own Linux-native copy — `better-sqlite3` is a real compiled
+binary, and the Windows- and WSL-side installs are never interchangeable.
+`runtime/scripts/benchmark.js` (`npm run benchmark`) measures real concurrent
+load at batch sizes 1/10/66 against the real database.
 
 Confirmed live end-to-end during development: a real canary run against
 `@VEX`, submitted to a running instance of this server, came back
@@ -945,7 +1018,50 @@ Confirmed live end-to-end during development: a real canary run against
 a real verifier ID — the first genuinely non-simulated verification in this
 project's history. It correctly did *not* cascade into `PRODUCTION_VERIFIED`
 for VEX, because the other five system-wide governance requirements were
-still unattested — exactly the intended behavior (see v3.22.0 below).
+still unattested — exactly the intended behavior (see next section).
+
+## Production Verification Gate
+
+The Governance page's `🚦 Production Verification Gate` badge stays `HOLD`
+until **all six** of these independently read `VERIFIED`. There is no
+shortcut — each one requires its own real, retained evidence; nothing here
+promotes another.
+
+```
+                    🚦 Production Verification Gate  —  HOLD until all six are VERIFIED
+                    ────────────────────────────────────────────────────────────────────
+
+  system-managed (🔒 computed only — the "Record Evidence" button is replaced
+  with a read-only "View (System-Managed)" button; these can never be self-attested)
+
+    source_access ─────▶ Governance → "Register Source" (POST /api/sources) then
+                          "validate access" (POST /api/sources/:id/access) on a
+                          real, non-expired source → GET /api/governance/control-status
+                          computes governedSourceAccess.verified from that real state
+
+    permissions ────────▶ computed from the requesting token's real scope (see
+                          Token scopes above) — a standard-scope token being
+                          genuinely denied at /api/tokens IS the evidence
+
+    independent_        ─▶ Governance → "▶️ Run Canary" then "📤 Submit for
+    verification           Verification" against a running runtime/ instance —
+                          runtime/routes/verify.js validates and HMAC-signs a
+                          real response; nothing is fabricated client-side
+
+  self-attested (Governance page → "Record Evidence" on each card — requires
+  a real evidence reference + a named independent verifier; PENDING is the
+  honest default until both are genuinely entered)
+
+    workflow ───────────▶ e.g. the Task & Handoff Ledger's real ownership-only
+                          transitions and approval-gated hand-offs
+
+    telemetry ──────────▶ e.g. the runtime's own per-request logging and the
+                          sync_events table's real duration/result records
+
+    audit_trail ────────▶ e.g. command_audit_events, knowledge_path_events,
+                          and DATA.governance.ledger — real, append-only,
+                          durably retained records
+```
 
 ## Division → Purpose → Mission → Task Reference (66 identities)
 
