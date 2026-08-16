@@ -48,20 +48,27 @@ function loadModules(ctx, files) {
     }
 }
 
-function main() {
+async function main() {
     const testFiles = fs.readdirSync(__dirname).filter(function (f) { return f.endsWith('.test.js'); }).sort();
     let totalPass = 0, totalFail = 0;
 
     for (const tf of testFiles) {
         const suite = require(path.join(__dirname, tf));
-        const ctx = makeContext();
-        loadModules(ctx, suite.modules);
         let pass = 0, fail = 0;
         function assert(cond, label) {
             if (cond) { pass++; } else { fail++; console.error('  FAIL  ' + label); }
         }
         console.log('\n[' + tf + ']');
-        suite.run(ctx, assert);
+        // suite.dom === true opts a suite out of the stub-DOM vm sandbox entirely — it manages
+        // its own real (jsdom) document and receives just `assert`, since a real DOM/window
+        // isn't a plain vm context the shared makeContext() stub is built for.
+        if (suite.dom) {
+            await suite.run(assert);
+        } else {
+            const ctx = makeContext();
+            loadModules(ctx, suite.modules);
+            suite.run(ctx, assert);
+        }
         console.log('  ' + pass + ' passed, ' + fail + ' failed');
         totalPass += pass; totalFail += fail;
     }

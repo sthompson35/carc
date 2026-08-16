@@ -3,7 +3,7 @@
 
     function buildDefaultData() {
         return {
-            participants: ROSTER.map(function (r, idx) { var p = rosterToParticipant(r, idx); var w = MEMBER_PROFILE_REGISTRY[p.callsign]; if (w) { p.memberProfile = JSON.parse(JSON.stringify(w)); p.skills = JSON.parse(JSON.stringify(w.skills || [])); } return p; }),
+            participants: ROSTER.map(function (r, idx) { var p = rosterToParticipant(r, idx); var w = MEMBER_PROFILE_REGISTRY[p.callsign]; if (w) { p.memberProfile = JSON.parse(JSON.stringify(w)); p.skills = JSON.parse(JSON.stringify(w.skills || [])); } var wp = TEAM_WORKING_PROFILES[p.callsign]; if (wp) p.proposedWorkingProfile = JSON.parse(JSON.stringify(wp)); return p; }),
             conversations: [
                 { id: 'conv01', title: 'AI Training Academy — Canonical Registry Audit', messages: 1, created: daysAgo(19), status: 'completed', participantIds: [], messagesList: [{ role: 'user', text: 'Did every AI AGENTS, TROOPERS & SERVICE MEMBERS get a unique canonical ID?', time: daysAgo(19) }] },
                 { id: 'conv02', title: 'Canonical Reconciliation & Production Gate', messages: 1, created: daysAgo(18), status: 'completed', participantIds: [], messagesList: [{ role: 'user', text: 'Fix all canonical reconciliation and role/callsign collision control, governance-level inconsistency.', time: daysAgo(18) }] },

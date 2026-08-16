@@ -13,6 +13,7 @@ module.exports = {
         'persona/identity-profiles.js',
         'persona/alias-registry.js',
         'persona/member-registry.js',
+        'data/team-working-profiles.js',
         'persona/skills-registry.js',
         'schemas/migrate.js',
         'data/seed.js',
@@ -23,9 +24,17 @@ module.exports = {
         var migrateData = ctx.migrateData;
 
         var d = migrateData({});
-        assert(d.schemaVersion === 29, 'migrateData sets schemaVersion to 29 (got ' + d.schemaVersion + ')');
-        assert(d.governance.release === 'CARC v3.32.0 — Structured Training Evidence Workflow', 'governance.release reflects the reconciled schema-29 chain');
+        assert(d.schemaVersion === 30, 'migrateData sets schemaVersion to 30 (got ' + d.schemaVersion + ')');
+        assert(d.governance.release === 'CARC v3.34.0 — Skill Verification UI & Proposed Working Profiles', 'governance.release reflects the reconciled schema-30 chain');
         assert(d.helpDesk && Array.isArray(d.helpDesk.tickets), 'schema 22 initializes the governed help desk safely');
+
+        var wpD = migrateData({});
+        var wpVinnie = wpD.participants.find(function (p) { return p.callsign === '@VINNIE'; });
+        assert(!!wpVinnie.proposedWorkingProfile, 'schema 30 backfills proposedWorkingProfile for every real canonical participant');
+        assert(Array.isArray(wpVinnie.proposedWorkingProfile.reportsThrough), 'backfilled proposedWorkingProfile carries real reportsThrough data');
+        var reMigrated = migrateData(JSON.parse(JSON.stringify(wpD)));
+        var rePreserved = reMigrated.participants.find(function (p) { return p.callsign === '@VINNIE'; });
+        assert(rePreserved.proposedWorkingProfile.reportsThrough.join(',') === wpVinnie.proposedWorkingProfile.reportsThrough.join(','), 'schema 30 never overwrites an already-present proposedWorkingProfile on re-migration');
         var helpDeskD = migrateData({});
         helpDeskD.helpDesk.tickets.push({ id:'HD-0099', subject:'Preserve me' });
         var migratedAgain = migrateData(helpDeskD);

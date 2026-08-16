@@ -542,6 +542,16 @@
             d.governance.ledger = d.governance.ledger || [];
             d.governance.ledger.unshift({ time:new Date().toISOString(), type:'training', text:'CARC v3.32.0 added required-field evidence submission, correction/resubmission, reviewer separation, approve/reject decisions, and targeted stage verification for the controlled pilot. Submission and ticket resolution alone never verify a stage.' });
         }
-        d.schemaVersion = 29;
+        if ((d.schemaVersion || 0) < 30) {
+            d.participants.forEach(function (p) {
+                if (!p.callsign || p.proposedWorkingProfile) return;
+                var wp = TEAM_WORKING_PROFILES[p.callsign];
+                if (wp) p.proposedWorkingProfile = JSON.parse(JSON.stringify(wp));
+            });
+            d.governance.release = 'CARC v3.34.0 — Skill Verification UI & Proposed Working Profiles';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({ time:new Date().toISOString(), type:'training', text:'CARC v3.34.0 added a real evidence-capture UI for skill records (assignment still never implies verification) and a clearly-labeled PROPOSED Working Profile per identity (reporting lines, tool classes, performance measures) — department-clustered inference with no source in data/roster.js, never contributing to readiness or the Production Verification Gate.' });
+        }
+        d.schemaVersion = 30;
         return d;
     }

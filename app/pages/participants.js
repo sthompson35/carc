@@ -269,8 +269,30 @@
                 '<div class="mt-1"><b>Tools (Assigned; not connection/authorization proof)</b><div class="text-xs text-muted">' + esc(((p.memberProfile.toolProfile && p.memberProfile.toolProfile.assignedTools) || []).join('; ') || '—') + '</div></div>' +
                 '<div class="mt-1"><b>Settings</b><div class="text-xs text-muted">' + esc((p.memberProfile.settingsProfile && p.memberProfile.settingsProfile.summary) || '—') + '</div></div>' +
                 '</div>' : '') +
-            ((p.skills || []).length ? '<div class="mt-2"><strong class="text-sm">Skills (' + (p.skills || []).filter(function(s){return s.status === "VERIFIED";}).length + '/' + (p.skills || []).length + ' verified)</strong>' +
-                '<div class="gate-grid mt-2">' + (p.skills || []).map(function(s){return '<div class="gate-item"><div class="gate-head"><div class="gate-name">'+esc(s.name)+'</div><span class="badge '+(s.status === "VERIFIED" ? "badge-active" : "badge-inactive")+'">'+esc(s.status)+'</span></div><div class="gate-desc">'+esc(s.category)+' · Target: '+esc(s.proficiencyTarget)+'</div><div class="gate-meta">Assessment: '+esc(s.assessmentId || 'NOT RECORDED')+'<br>Verifier: '+esc(s.verifier || 'NOT RECORDED')+'<br>Evidence: '+esc((s.evidence || []).length ? (s.evidence || []).length + ' record(s)' : 'NOT RECORDED')+'</div></div>';}).join('') + '</div><div class="text-xs text-muted mt-1">Skill assignment ≠ skill verification. VERIFIED requires assessment + evidence + verifier + timestamp and a current review state.</div></div>' : '') +
+            (p.proposedWorkingProfile ? '<div class="mt-2"><strong class="text-sm">Proposed Working Profile</strong> <span class="audit-warn" style="font-weight:700;">PROPOSED</span>' +
+                '<div class="kv-row"><span>Reports Through</span><span>' + esc((p.proposedWorkingProfile.reportsThrough || []).join(', ') || '—') + '</span></div>' +
+                '<div class="kv-row"><span>Serves</span><span>' + esc((p.proposedWorkingProfile.serves || []).join(', ') || '—') + '</span></div>' +
+                '<div class="kv-row"><span>Review Owner</span><span>' + esc(p.proposedWorkingProfile.reviewOwner || '—') + '</span></div>' +
+                '<div class="kv-row"><span>Verifier</span><span>' + esc(p.proposedWorkingProfile.verifier || '—') + '</span></div>' +
+                '<div class="mt-1"><b>Approved Tool Classes</b><div class="text-sm text-muted">' + esc((p.proposedWorkingProfile.approvedToolClasses || []).join(', ') || '—') + '</div></div>' +
+                '<div class="mt-1"><b>Performance Measures</b><div class="text-sm text-muted">' + esc((p.proposedWorkingProfile.performanceMeasures || []).join(', ') || '—') + '</div></div>' +
+                '<div class="mt-1"><b>Escalation Triggers</b><ul style="padding-left:18px;margin-top:4px;">' + (p.proposedWorkingProfile.escalationTriggers || []).map(function(x){return '<li class="text-sm">'+esc(x)+'</li>';}).join('') + '</ul></div>' +
+                '<div class="mt-1"><b>Prohibited Actions</b><ul style="padding-left:18px;margin-top:4px;">' + (p.proposedWorkingProfile.prohibitedActions || []).map(function(x){return '<li class="text-sm">'+esc(x)+'</li>';}).join('') + '</ul></div>' +
+                '<div class="text-xs audit-warn mt-1">Proposed — department-clustered inference, not sourced from any real reporting-hierarchy or tool-registry field in this app. Never contributes to readiness, verification, or the Production Verification Gate.</div>' +
+                '</div>' : '') +
+            (function () {
+                var skState = evaluateSkillsState(p);
+                if (!skState.total) return '';
+                return '<div class="mt-2"><strong class="text-sm">Skills (' + skState.verified + '/' + skState.total + ' verified)</strong>' +
+                    '<div class="gate-grid mt-2">' + skState.skills.map(function (s) {
+                        var cls = s.status === 'VERIFIED' ? 'badge-active' : 'badge-inactive';
+                        var btnLabel = s.status === 'VERIFIED' ? 'Review Evidence' : 'Record Evidence';
+                        return '<div class="gate-item"><div class="gate-head"><div class="gate-name">' + esc(s.name) + '</div><span class="badge ' + cls + '">' + esc(s.status) + '</span></div>' +
+                            '<div class="gate-desc">' + esc(s.category) + ' · Target: ' + esc(s.proficiencyTarget) + '</div>' +
+                            '<div class="gate-meta">Assessment: ' + esc(s.assessmentId || 'NOT RECORDED') + '<br>Verifier: ' + esc(s.verifier || 'NOT RECORDED') + '<br>Evidence: ' + esc((s.evidence || []).length ? (s.evidence || []).length + ' record(s)' : 'NOT RECORDED') + '</div>' +
+                            '<div class="mt-1"><button class="btn btn-outline btn-sm sk-evidence-edit" data-pid="' + esc(p.id) + '" data-skid="' + esc(s.skillId) + '">' + btnLabel + '</button></div></div>';
+                    }).join('') + '</div><div class="text-xs text-muted mt-1">Skill assignment ≠ skill verification. VERIFIED requires assessment + evidence + verifier + timestamp and a current review state.</div></div>';
+            })() +
             (function () {
                 var ipState = evaluateIdentityProfilesState(p);
                 return '<div class="mt-2"><strong class="text-sm">Identity Profiles (' + ipState.defined + '/' + ipState.total + ')</strong>' +
@@ -303,6 +325,9 @@
         });
         $all('.ip-evidence-edit').forEach(function (btn) {
             btn.addEventListener('click', function () { openIdentityProfileEvidenceModal(btn.getAttribute('data-pid'), btn.getAttribute('data-key')); });
+        });
+        $all('.sk-evidence-edit').forEach(function (btn) {
+            btn.addEventListener('click', function () { openSkillEvidenceModal(btn.getAttribute('data-pid'), btn.getAttribute('data-skid')); });
         });
         $all('.ap-view').forEach(function (btn) {
             btn.addEventListener('click', function () { openAuthorityProfileModal(btn.getAttribute('data-pid')); });
@@ -403,6 +428,48 @@
             closeModal();
             openParticipantDetail(participantId);
             showToast('success', '✅ ' + def.name + ' evidence saved');
+        });
+    }
+
+    function openSkillEvidenceModal(participantId, skillId) {
+        var p = DATA.participants.find(function (x) { return x.id === participantId; });
+        if (!p) return;
+        var idx = (p.skills || []).findIndex(function (s) { return s.skillId === skillId; });
+        if (idx === -1) return;
+        var skill = p.skills[idx];
+        var body = '<div class="form-group"><label>Skill</label><input value="' + esc(skill.name) + '" disabled></div>' +
+            '<div class="form-group"><label>Assessment ID</label><input id="skAssessment" value="' + esc(skill.assessmentId || '') + '" placeholder="e.g. assessment/exam reference ID"></div>' +
+            '<div class="form-group"><label>Evidence Reference</label><textarea id="skEvidence" rows="4" placeholder="Assessment record, work sample, observation log, one per line…">' + esc((skill.evidence || []).join('\n')) + '</textarea></div>' +
+            '<div class="form-group"><label>Verifier</label><input id="skVerifier" value="' + esc(skill.verifier || '') + '" placeholder="e.g. supervisor, reviewer ID"></div>' +
+            '<div class="form-group"><label>Status</label><select id="skStatus"><option value="ASSIGNED">ASSIGNED</option><option value="VERIFIED">VERIFIED</option></select></div>' +
+            '<div class="text-xs text-muted">VERIFIED requires an assessment ID, at least one evidence reference, and a verifier — enforced by the same verifySkillRecord() guard used everywhere else in CARC. CARC will not accept a bare status flip.</div>';
+        var footer = '<button class="btn btn-outline" id="skCancel">Cancel</button><button class="btn btn-primary" id="skSave">Save Evidence</button>';
+        openModal('Skill — ' + skill.name, body, footer);
+        document.getElementById('skStatus').value = skill.status === 'VERIFIED' ? 'VERIFIED' : 'ASSIGNED';
+        document.getElementById('skCancel').addEventListener('click', closeModal);
+        document.getElementById('skSave').addEventListener('click', function () {
+            var assessmentId = document.getElementById('skAssessment').value.trim();
+            var evidenceLines = document.getElementById('skEvidence').value.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+            var verifier = document.getElementById('skVerifier').value.trim();
+            var st = document.getElementById('skStatus').value;
+            if (st === 'VERIFIED') {
+                try {
+                    p.skills[idx] = verifySkillRecord(skill, { assessmentId: assessmentId, verifier: verifier, evidence: evidenceLines });
+                } catch (e) {
+                    showToast('error', '❌ ' + e.message.replace(/_/g, ' '));
+                    return;
+                }
+            } else {
+                skill.assessmentId = assessmentId || null;
+                skill.verifier = verifier || null;
+                skill.evidence = evidenceLines;
+                skill.status = 'ASSIGNED';
+            }
+            addLog(p.name + ' skill · ' + skill.name + ' → ' + st, 'info');
+            saveData(); renderAll();
+            closeModal();
+            openParticipantDetail(participantId);
+            showToast('success', '✅ Skill evidence saved');
         });
     }
 

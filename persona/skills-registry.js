@@ -24,6 +24,14 @@ function verifySkillRecord(skill, attestation) {
     });
     return next;
 }
+// Mirrors evaluateKnowledgePathState(p) (persona/knowledge-path.js) — same shape, same
+// pure/no-DATA-access discipline, scoped to this identity's own skills[] array.
+function evaluateSkillsState(p) {
+    var skills = (p && p.skills) || [];
+    var verified = skills.filter(function (s) { return s.status === SKILL_STATUS.VERIFIED; }).length;
+    var total = skills.length;
+    return { skills: skills, verified: verified, total: total, percent: total ? Math.round((verified / total) * 100) : 0 };
+}
 function auditSkills(participants) {
     var blockers=[], warnings=[], seen={};
     (participants || []).forEach(function(p) {

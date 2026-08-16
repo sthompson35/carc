@@ -8,5 +8,8 @@
     "wsl:frontend": "bash scripts/wsl/start-frontend.sh",
     "wsl:runtime": "bash scripts/wsl/start-runtime.sh",
     "wsl:start": "bash scripts/wsl/start-all.sh"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
   }
 }
