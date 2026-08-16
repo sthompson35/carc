@@ -118,6 +118,28 @@
         return function () { var args = arguments, ctx = this; clearTimeout(t); t = setTimeout(function () { fn.apply(ctx, args); }, ms); };
     }
 
+    // A page reload destroys any in-flight timers/fetch chains. Without this, a batch that
+    // was RUNNING when the tab closed stays RUNNING forever — runAndSubmitAllIndividualCanaries
+    // refuses to start a new one, and the UI shows perpetual progress for work that will never
+    // resume. Recovery is honest, not a silent resume: marks it INTERRUPTED, never COMPLETE.
+    function recoverInterruptedClientState(data, recoveredAt) {
+        data = data || {};
+        var changed = false;
+        if (data.agent && data.agent.state === 'running') {
+            data.agent.state = 'idle';
+            changed = true;
+        }
+        var batch = data.runtimeCanary && data.runtimeCanary.batchVerification;
+        if (batch && batch.status === 'RUNNING') {
+            batch.status = 'INTERRUPTED';
+            batch.current = null;
+            batch.finishedAt = recoveredAt || new Date().toISOString();
+            batch.error = 'Browser session interrupted before batch completion';
+            changed = true;
+        }
+        return changed;
+    }
+
     // ================================================================
     // RENDER ALL
     // ================================================================

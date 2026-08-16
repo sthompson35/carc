@@ -15,6 +15,19 @@
         modalTitle.textContent = title;
         modalBody.innerHTML = bodyHtml;
         modalFooter.innerHTML = footerHtml || '';
+        // Modal forms are generated from HTML strings. Link adjacent labels to
+        // their controls and name any remaining controls for assistive tools.
+        Array.prototype.forEach.call(modalBody.querySelectorAll('label'), function (label) {
+            if (label.htmlFor) return;
+            var group = label.parentElement;
+            var control = group && group.querySelector('input, select, textarea');
+            if (control && control.id) label.htmlFor = control.id;
+        });
+        Array.prototype.forEach.call(modalBody.querySelectorAll('input, select, textarea'), function (control) {
+            if (control.getAttribute('aria-label') || control.getAttribute('aria-labelledby')) return;
+            var linked = control.id && modalBody.querySelector('label[for="' + control.id + '"]');
+            if (!linked) control.setAttribute('aria-label', control.placeholder || control.id || 'Form field');
+        });
         modalOverlay.hidden = false;
         document.body.style.overflow = 'hidden';
         var modalEl = modalOverlay.querySelector('.modal');

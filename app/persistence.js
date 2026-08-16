@@ -51,6 +51,10 @@
         }
     })();
 
+    // A reload destroys pending timers/fetch chains. Release any persisted
+    // client-side locks before wiring the new browser session.
+    if (recoverInterruptedClientState(DATA)) saveDataNow();
+
     // ================================================================
     // TOAST
     // ================================================================
