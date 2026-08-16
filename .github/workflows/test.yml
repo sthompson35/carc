@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Frontend unit tests
+        run: node tests/run.js
+
+      - name: Install runtime dependencies
+        working-directory: runtime
+        run: npm install
+
+      - name: Runtime smoke test
+        working-directory: runtime
+        run: npm run smoke
+
+      - name: Runtime e2e test
+        working-directory: runtime
+        run: npm run e2e

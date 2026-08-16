@@ -1,5 +1,11 @@
 # CARC — Council Agent Roll Call
 
+[![Tests](https://github.com/sthompson35/carc/actions/workflows/test.yml/badge.svg)](https://github.com/sthompson35/carc/actions/workflows/test.yml)
+[![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/sthompson35/carc)](https://github.com/sthompson35/carc/commits/main)
+[![Repo size](https://img.shields.io/github/repo-size/sthompson35/carc)](https://github.com/sthompson35/carc)
+[![Open issues](https://img.shields.io/github/issues/sthompson35/carc)](https://github.com/sthompson35/carc/issues)
+
 A standalone, single-file admin dashboard for managing AI agent / council
 participants, conversations, and automated roll calls. No build step, no
 dependencies, no backend — open `index.html` in a browser and it runs.
