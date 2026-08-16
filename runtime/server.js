@@ -18,6 +18,7 @@ const commandRoutes = require('./routes/commands');
 const taskRoutes = require('./routes/tasks');
 const handoffRoutes = require('./routes/handoffs');
 const knowledgePathRoutes = require('./routes/knowledgePath');
+const sourcesRoutes = require('./routes/sources');
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -88,7 +89,8 @@ app.use(function (req, res, next) {
 // dashboard's ~40 assets (or one reload during active use) blows through the budget and the
 // page breaks with 429s on its own JS files.
 app.use(rateLimit({
-    windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false,
+    windowMs: 60_000, max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 60,
+    standardHeaders: true, legacyHeaders: false,
     skip: function (req) { return req.path.indexOf('/dashboard') === 0; }
 }));
 
@@ -104,6 +106,7 @@ app.use('/', commandRoutes);
 app.use('/', taskRoutes);
 app.use('/', handoffRoutes);
 app.use('/', knowledgePathRoutes);
+app.use('/', sourcesRoutes);
 
 // Serve admin dashboard; must come after API routes so /api/* routes win first.
 app.get('/admin', function (req, res) {

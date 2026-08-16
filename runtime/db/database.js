@@ -168,6 +168,23 @@ function initDb() {
         CREATE INDEX IF NOT EXISTS idx_handoffs_task  ON handoffs(task_id);
         CREATE INDEX IF NOT EXISTS idx_handoffs_state ON handoffs(state);
 
+        CREATE TABLE IF NOT EXISTS sources (
+            source_id            TEXT    PRIMARY KEY,
+            name                 TEXT,
+            authority            TEXT,
+            source_uri           TEXT,
+            content_hash         TEXT,
+            permission_basis     TEXT,
+            provenance           TEXT,
+            status               TEXT    NOT NULL DEFAULT 'ACTIVE',
+            freshness_checked_at TEXT,
+            review_due_at        TEXT,
+            registered_by        TEXT,
+            created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+            access_validated_at  TEXT,
+            access_purpose       TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS knowledge_path_events (
             id                 TEXT    PRIMARY KEY,
             service_member_id  TEXT    NOT NULL,
@@ -202,6 +219,15 @@ function initDb() {
     });
     d.exec('CREATE INDEX IF NOT EXISTS idx_cmd_audit_batch ON command_audit_events(batch_id)');
     d.exec('CREATE INDEX IF NOT EXISTS idx_cmd_audit_svc   ON command_audit_events(service_member_id)');
+
+    // Migration: tokens predates a real scope model. Every existing/new token defaults to
+    // 'standard' — only explicitly admin-scoped tokens can manage other tokens. This is what
+    // actually makes the "governed sources & least-privilege" control status computable from
+    // real state instead of a fixed/fabricated pass.
+    const tokenCols = d.prepare("PRAGMA table_info(tokens)").all().map(function (c) { return c.name; });
+    if (tokenCols.indexOf('scope') === -1) {
+        d.exec("ALTER TABLE tokens ADD COLUMN scope TEXT NOT NULL DEFAULT 'standard'");
+    }
 
     return d;
 }

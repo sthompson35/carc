@@ -35,7 +35,16 @@ function authReq(port, path, method, token, body) {
 async function run() {
     const port = await freePort();
     process.env.PORT = String(port);
+    // Isolated DB, not the real runtime/data/carc.db — sharing it let a real registered
+    // source (from actual gate-verification work) collide with this suite's zero-state
+    // assumptions. Every ephemeral-server script gets its own throwaway DB file now.
+    process.env.DB_PATH = require('path').join(require('os').tmpdir(), 'carc-e2e-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex') + '.db');
     process.env.SIGNING_SECRET = 'e2e-test-secret-' + crypto.randomBytes(8).toString('hex');
+    // This suite alone sends more requests per run than the production rate limit allows —
+    // that's a property of exhaustively testing every route, not something a real user would
+    // ever do in a minute. Raise it for this ephemeral instance only; production keeps the
+    // real default (60) unless RATE_LIMIT_MAX is set, which benchmark.js deliberately doesn't.
+    process.env.RATE_LIMIT_MAX = '1000';
     require('../server');
     await new Promise(r => setTimeout(r, 250));
 
@@ -56,7 +65,7 @@ async function run() {
     const tmpToken  = 'e2e-' + crypto.randomBytes(20).toString('hex');
     const tmpHash   = hashToken(tmpToken);
     const db = getDb();
-    const ins = db.prepare('INSERT INTO tokens (token_hash, description) VALUES (?, ?)').run(tmpHash, 'e2e-temp');
+    const ins = db.prepare('INSERT INTO tokens (token_hash, description, scope) VALUES (?, ?, ?)').run(tmpHash, 'e2e-temp', 'admin');
     const tmpId = ins.lastInsertRowid;
     console.log('\n[E2E] Temporary token created (id=' + tmpId + ')');
 
@@ -493,6 +502,51 @@ async function run() {
     db.prepare('DELETE FROM knowledge_path_events WHERE id = ?').run(kpEventId);
     console.log('     knowledge-path test record cleaned up (sync_events audit rows intentionally left — append-only trail)');
 
+    // ── 17c. Governed Sources + real least-privilege control status ────────────────
+    console.log('\n[17c] Governed Sources + control-status round-trip');
+    const stdToken = 'e2e-std-' + crypto.randomBytes(20).toString('hex');
+    const stdIns = db.prepare('INSERT INTO tokens (token_hash, description, scope) VALUES (?, ?, ?)').run(hashToken(stdToken), 'e2e-standard', 'standard');
+    const stdId = stdIns.lastInsertRowid;
+
+    // A standard-scope token is genuinely denied the admin-only endpoint...
+    t = await authReq(port, '/api/tokens', 'GET', stdToken);
+    assert(t.status === 403, 'standard-scope token is denied GET /api/tokens (real least-privilege, not cosmetic)');
+    // ...while the admin token (tmpToken) is not.
+    t = await authReq(port, '/api/tokens', 'GET', tmpToken);
+    assert(t.status === 200, 'admin-scope token is allowed GET /api/tokens');
+
+    // No sources registered yet → control-status honestly reports unverified.
+    t = await authReq(port, '/api/governance/control-status', 'GET', stdToken);
+    data = t.json();
+    assert(t.status === 200 && data.governedSourceAccess.verified === false, 'control-status reports governedSourceAccess unverified with zero sources registered');
+    assert(data.enforcedPermissions.verified === true, 'control-status: a standard token IS its own least-privilege denial evidence');
+    t = await authReq(port, '/api/governance/control-status', 'GET', tmpToken);
+    data = t.json();
+    assert(data.enforcedPermissions.verified === false, "control-status: an admin token can't prove non-admin denial for itself");
+
+    const srcId = 'SRC-E2E-' + Date.now();
+    t = await authReq(port, '/api/sources', 'POST', tmpToken, { sourceId: srcId, name: 'e2e test source', authority: '@ARCHITECT', sourceUri: 'file://e2e', reviewDueAt: new Date(Date.now() + 86400000).toISOString() });
+    data = t.json();
+    assert(t.status === 201 && data.sourceId === srcId, 'POST /api/sources registers a real source');
+
+    // Access not yet validated → still unverified.
+    t = await authReq(port, '/api/governance/control-status', 'GET', stdToken);
+    data = t.json();
+    assert(data.governedSourceAccess.verified === false, 'registering a source alone does not verify governedSourceAccess — access must be validated too');
+
+    t = await authReq(port, '/api/sources/' + srcId + '/access', 'POST', tmpToken, { purpose: 'e2e validation' });
+    assert(t.status === 200, 'POST /api/sources/:id/access validates access on a real, existing source');
+    t = await authReq(port, '/api/sources/NOT-REAL-SOURCE/access', 'POST', tmpToken, { purpose: 'x' });
+    assert(t.status === 404, 'validating access on an unregistered source is rejected, not rubber-stamped');
+
+    t = await authReq(port, '/api/governance/control-status', 'GET', stdToken);
+    data = t.json();
+    assert(data.governedSourceAccess.verified === true, 'governedSourceAccess becomes verified once a real source has both ACTIVE status and validated access');
+
+    db.prepare('DELETE FROM sources WHERE source_id = ?').run(srcId);
+    db.prepare('UPDATE tokens SET active = 0 WHERE id = ?').run(stdId);
+    console.log('     sources test record + standard token cleaned up');
+
     // ── 18. revoke temp token; confirm 403 ───────────────────────
     console.log('\n[18] Revoke temp token → confirm 403');
     db.prepare('UPDATE tokens SET active = 0 WHERE id = ?').run(tmpId);
@@ -503,6 +557,7 @@ async function run() {
     console.log('\n══════════════════════════════════════════');
     console.log('  E2E complete: ' + pass + ' passed, ' + fail + ' failed');
     console.log('══════════════════════════════════════════\n');
+    try { require('../db/database').closeDb(); require('fs').unlinkSync(process.env.DB_PATH); } catch (e) { /* best effort */ }
     process.exit(fail > 0 ? 1 : 0);
 }
 

@@ -14,9 +14,12 @@ if (existing > 0) {
 }
 
 const token = 'carc-' + crypto.randomBytes(20).toString('hex');
-db.prepare('INSERT INTO tokens (token_hash, description) VALUES (?, ?)').run(hashToken(token), 'default');
+// The first token is the operator's own — admin-scoped, so it can manage other tokens.
+// Anything minted afterward (node scripts/token.js add, or the CARC UI) defaults to
+// 'standard' scope unless admin is explicitly requested.
+db.prepare('INSERT INTO tokens (token_hash, description, scope) VALUES (?, ?, ?)').run(hashToken(token), 'default', 'admin');
 
 console.log('\n✅  Database initialized.');
-console.log('\nBearer token — paste this into CARC Governance → Configure Endpoint:');
+console.log('\nBearer token (admin-scoped) — paste this into CARC Governance → Configure Endpoint:');
 console.log('\n  ' + token + '\n');
 console.log('⚠️  This token will NOT be shown again. Store it securely.\n');

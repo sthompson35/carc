@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { requireBearer, hashToken } = require('../middleware/auth');
+const { requireBearer, requireAdmin, hashToken } = require('../middleware/auth');
 const { getDb } = require('../db/database');
 
 // GET /api/verifications?page=1&limit=20&verified=
@@ -25,24 +25,28 @@ router.get('/api/verifications', requireBearer, function (req, res) {
     res.json({ total, page, limit, pages: Math.ceil(total / limit), rows });
 });
 
-// GET /api/tokens
-router.get('/api/tokens', requireBearer, function (req, res) {
+// GET /api/tokens — admin-scoped only. This is the real least-privilege boundary
+// refreshRuntimeControlEvidence() probes: a standard-scope token is genuinely denied here.
+router.get('/api/tokens', requireBearer, requireAdmin, function (req, res) {
     const rows = getDb()
-        .prepare('SELECT id, description, created_at, last_used_at, active FROM tokens ORDER BY id')
+        .prepare('SELECT id, description, scope, created_at, last_used_at, active FROM tokens ORDER BY id')
         .all();
     res.json({ tokens: rows });
 });
 
-// POST /api/tokens  { description }  — returns plaintext token exactly once
-router.post('/api/tokens', requireBearer, function (req, res) {
+// POST /api/tokens  { description, scope? }  — returns plaintext token exactly once.
+// New tokens default to 'standard' scope even when created by an admin — elevation is
+// explicit, never inherited automatically.
+router.post('/api/tokens', requireBearer, requireAdmin, function (req, res) {
     const desc  = (String(req.body.description || '').trim().slice(0, 120)) || ('token-' + Date.now());
+    const scope = req.body.scope === 'admin' ? 'admin' : 'standard';
     const token = 'carc-' + crypto.randomBytes(20).toString('hex');
-    const info  = getDb().prepare('INSERT INTO tokens (token_hash, description) VALUES (?, ?)').run(hashToken(token), desc);
-    res.status(201).json({ id: info.lastInsertRowid, description: desc, token });
+    const info  = getDb().prepare('INSERT INTO tokens (token_hash, description, scope) VALUES (?, ?, ?)').run(hashToken(token), desc, scope);
+    res.status(201).json({ id: info.lastInsertRowid, description: desc, scope, token });
 });
 
 // DELETE /api/tokens/:id
-router.delete('/api/tokens/:id', requireBearer, function (req, res) {
+router.delete('/api/tokens/:id', requireBearer, requireAdmin, function (req, res) {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'BAD_REQUEST', reason: 'Invalid ID' });
     const info = getDb().prepare('UPDATE tokens SET active = 0 WHERE id = ?').run(id);

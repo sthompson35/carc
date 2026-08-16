@@ -13,6 +13,7 @@ function freePort() {
 async function main() {
     const port = await freePort();
     process.env.PORT = String(port);
+    process.env.DB_PATH = require('path').join(require('os').tmpdir(), 'carc-smoke-' + Date.now() + '.db');
     require('../server');
 
     const http = require('http');
@@ -138,7 +139,28 @@ async function main() {
     console.assert(t.status === 401, '/api/chat/sync should require auth');
     console.log('POST /api/chat/sync', t.status, 'auth guard ok');
 
+    t = await req({ ...base, path: '/api/knowledge-path', method: 'GET' });
+    console.assert(t.status === 401, '/api/knowledge-path should require auth');
+    console.log('GET /api/knowledge-path', t.status, 'auth guard ok');
+
+    t = await req({ ...base, path: '/api/knowledge-path/sync', method: 'POST', headers: { 'Content-Type': 'application/json' } }, '{}');
+    console.assert(t.status === 401, '/api/knowledge-path/sync should require auth');
+    console.log('POST /api/knowledge-path/sync', t.status, 'auth guard ok');
+
+    t = await req({ ...base, path: '/api/sources', method: 'GET' });
+    console.assert(t.status === 401, '/api/sources should require auth');
+    console.log('GET /api/sources', t.status, 'auth guard ok');
+
+    t = await req({ ...base, path: '/api/sources', method: 'POST', headers: { 'Content-Type': 'application/json' } }, '{}');
+    console.assert(t.status === 401, '/api/sources should require auth');
+    console.log('POST /api/sources', t.status, 'auth guard ok');
+
+    t = await req({ ...base, path: '/api/governance/control-status', method: 'GET' });
+    console.assert(t.status === 401, '/api/governance/control-status should require auth');
+    console.log('GET /api/governance/control-status', t.status, 'auth guard ok');
+
     console.log('\nAll smoke tests passed.');
+    try { require('../db/database').closeDb(); require('fs').unlinkSync(process.env.DB_PATH); } catch (e) { /* best effort */ }
     process.exit(0);
 }
 

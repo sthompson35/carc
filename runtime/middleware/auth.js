@@ -18,7 +18,7 @@ function requireBearer(req, res, next) {
     const hash = hashToken(token);
     const db = getDb();
     const row = db.prepare(
-        'SELECT id, description FROM tokens WHERE token_hash = ? AND active = 1'
+        'SELECT id, description, scope FROM tokens WHERE token_hash = ? AND active = 1'
     ).get(hash);
     if (!row) {
         return res.status(403).json({ error: 'FORBIDDEN', reason: 'Invalid or revoked token' });
@@ -26,7 +26,18 @@ function requireBearer(req, res, next) {
     db.prepare("UPDATE tokens SET last_used_at = datetime('now') WHERE id = ?").run(row.id);
     req.tokenId = row.id;
     req.tokenDescription = row.description;
+    req.tokenScope = row.scope || 'standard';
     next();
 }
 
-module.exports = { requireBearer, hashToken };
+// Use after requireBearer. Real least-privilege enforcement, not cosmetic — a 'standard'
+// token genuinely cannot manage other tokens, matching what refreshRuntimeControlEvidence()
+// on the frontend treats as retained least-privilege denial evidence.
+function requireAdmin(req, res, next) {
+    if (req.tokenScope !== 'admin') {
+        return res.status(403).json({ error: 'FORBIDDEN', reason: 'Admin-scoped token required' });
+    }
+    next();
+}
+
+module.exports = { requireBearer, requireAdmin, hashToken };

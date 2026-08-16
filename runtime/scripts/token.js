@@ -10,14 +10,15 @@ const [,, cmd, ...args] = process.argv;
 switch (cmd) {
     case 'add': {
         const desc = args[0] || ('token-' + Date.now());
+        const scope = args[1] === 'admin' ? 'admin' : 'standard';
         const token = 'carc-' + crypto.randomBytes(20).toString('hex');
-        db.prepare('INSERT INTO tokens (token_hash, description) VALUES (?, ?)').run(hashToken(token), desc);
-        console.log('\nNew token [' + desc + ']:\n\n  ' + token + '\n');
+        db.prepare('INSERT INTO tokens (token_hash, description, scope) VALUES (?, ?, ?)').run(hashToken(token), desc, scope);
+        console.log('\nNew ' + scope + ' token [' + desc + ']:\n\n  ' + token + '\n');
         break;
     }
     case 'list': {
         const rows = db.prepare(
-            'SELECT id, description, created_at, last_used_at, active FROM tokens ORDER BY id'
+            'SELECT id, description, scope, created_at, last_used_at, active FROM tokens ORDER BY id'
         ).all();
         console.table(rows);
         break;
@@ -30,5 +31,5 @@ switch (cmd) {
         break;
     }
     default:
-        console.log('Usage: node scripts/token.js <add [description] | list | revoke <id>>');
+        console.log('Usage: node scripts/token.js <add [description] [admin] | list | revoke <id>>');
 }
