@@ -32,7 +32,7 @@
             '<span class="text-xs">Page ' + result.page + ' / ' + result.totalPages + '</span>' +
             '<button data-pg="next" ' + (result.page >= result.totalPages ? 'disabled' : '') + '>›</button>' +
             '<button data-pg="last" ' + (result.page >= result.totalPages ? 'disabled' : '') + '>»</button>' +
-            '<select data-pg="size">' + [6, 8, 10, 20, 50].map(function (n) { return '<option value="' + n + '" ' + (n === state.pageSize ? 'selected' : '') + '>' + n + '/page</option>'; }).join('') + '</select>' +
+            '<select data-pg="size" name="pageSize" aria-label="Rows per page">' + [6, 8, 10, 20, 50].map(function (n) { return '<option value="' + n + '" ' + (n === state.pageSize ? 'selected' : '') + '>' + n + '/page</option>'; }).join('') + '</select>' +
             '</div>';
         $all('[data-pg]', container).forEach(function (el) {
             el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'click', function () {

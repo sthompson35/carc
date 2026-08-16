@@ -137,7 +137,7 @@
             var controlHelp = req.id === 'independent_verification'
                 ? 'Run Canary → configure an External Runtime Endpoint → Submit for Verification.'
                 : (req.id === 'source_access' ? 'External Runtime Endpoint → Register Source → Refresh Controls.' : 'External Runtime Endpoint → Refresh Controls (runs a scoped allow/deny evidence check).');
-            var body = '<div class="form-group"><label>Requirement</label><input value="'+esc(req.name)+'" disabled></div>' +
+            var body = '<div class="form-group"><label>Requirement</label><input id="geReqName" name="reqName" value="'+esc(req.name)+'" disabled></div>' +
                 '<p class="text-sm">This requirement is <b>system-managed</b> — it cannot be self-attested. Its state is derived from retained runtime control evidence.</p>' +
                 '<div class="kv-row"><span>Current Status</span><span class="badge '+(req.status==='VERIFIED'?'badge-active':'badge-inactive')+'">'+esc(req.status)+'</span></div>' +
                 (req.evidence ? '<div class="kv-row"><span>Evidence</span><span class="text-xs">'+esc(req.evidence)+'</span></div>' : '') +
@@ -147,7 +147,7 @@
             document.getElementById('geCancel').addEventListener('click', closeModal);
             return;
         }
-        var body='<div class="form-group"><label>Requirement</label><input value="'+esc(req.name)+'" disabled></div><div class="form-group"><label>Evidence Reference</label><textarea id="geEvidence" rows="4" placeholder="Source record ID, telemetry reference, audit artifact, approval ID…">'+esc(req.evidence||'')+'</textarea></div><div class="form-group"><label>Independent Verifier</label><input id="geVerifier" value="'+esc(req.verifier||'')+'" placeholder="e.g. HELIX / TANGO / reviewer ID"></div><div class="form-group"><label>Status</label><select id="geStatus"><option value="PENDING">PENDING</option><option value="VERIFIED">VERIFIED</option></select></div><div class="text-xs text-muted">VERIFIED requires both an evidence reference and an independent verifier. CARC will not accept a bare status flip.</div>';
+        var body='<div class="form-group"><label>Requirement</label><input id="geReqName" name="reqName" value="'+esc(req.name)+'" disabled></div><div class="form-group"><label>Evidence Reference</label><textarea id="geEvidence" rows="4" placeholder="Source record ID, telemetry reference, audit artifact, approval ID…">'+esc(req.evidence||'')+'</textarea></div><div class="form-group"><label>Independent Verifier</label><input id="geVerifier" value="'+esc(req.verifier||'')+'" placeholder="e.g. HELIX / TANGO / reviewer ID"></div><div class="form-group"><label>Status</label><select id="geStatus"><option value="PENDING">PENDING</option><option value="VERIFIED">VERIFIED</option></select></div><div class="text-xs text-muted">VERIFIED requires both an evidence reference and an independent verifier. CARC will not accept a bare status flip.</div>';
         var footer='<button class="btn btn-outline" id="geCancel">Cancel</button><button class="btn btn-primary" id="geSave">Save Evidence</button>';
         openModal('Production Evidence — '+req.name,body,footer); document.getElementById('geStatus').value=req.status;
         document.getElementById('geCancel').addEventListener('click',closeModal);
