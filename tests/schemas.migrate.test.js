@@ -23,13 +23,30 @@ module.exports = {
         var migrateData = ctx.migrateData;
 
         var d = migrateData({});
-        assert(d.schemaVersion === 22, 'migrateData sets schemaVersion to 22 (got ' + d.schemaVersion + ')');
+        assert(d.schemaVersion === 29, 'migrateData sets schemaVersion to 29 (got ' + d.schemaVersion + ')');
+        assert(d.governance.release === 'CARC v3.32.0 — Structured Training Evidence Workflow', 'governance.release reflects the reconciled schema-29 chain');
         assert(d.helpDesk && Array.isArray(d.helpDesk.tickets), 'schema 22 initializes the governed help desk safely');
         var helpDeskD = migrateData({});
         helpDeskD.helpDesk.tickets.push({ id:'HD-0099', subject:'Preserve me' });
         var migratedAgain = migrateData(helpDeskD);
         assert(migratedAgain.helpDesk.tickets.length === 1 && migratedAgain.helpDesk.tickets[0].id === 'HD-0099', 'schema 22 migration preserves existing help desk tickets');
         assert(Array.isArray(d.participants) && d.participants.length === 66, 'migrateData populates all 66 canonical participants from ROSTER');
+
+        assert(d.runtimeCanary.batchVerification === null, 'schema 24 backfills batchVerification as null when no batch has ever run');
+        assert(d.participants.every(function (p) { return (p.knowledgePath.stages || []).every(function (s) { return Array.isArray(s.history); }); }), 'schema 26 / the unconditional structural repair gives every stage a history[] array');
+        assert(d.knowledgePathPilot && d.knowledgePathPilot.reviewer === 'ATA-HELIX-000' && d.knowledgePathPilot.learners.length === 2, 'schema 28 seeds the Knowledge Path Pilot with @HELIX as reviewer and the 2 pilot learners');
+        var sourceReq = d.governance.requirements.find(function (r) { return r.id === 'source_access'; });
+        var permReq = d.governance.requirements.find(function (r) { return r.id === 'permissions'; });
+        assert(sourceReq.systemManaged === true && permReq.systemManaged === true, 'schema 23 makes source_access/permissions system-managed, non-self-attestable requirements');
+
+        // Structural repair preserves real evidence — never resets a stage's own history.
+        var repairD = migrateData({});
+        var vex = repairD.participants.find(function (p) { return p.callsign === '@VEX'; });
+        var stage = vex.knowledgePath.stages[0];
+        stage.history.push({ evidenceEventId: 'KP-TEST-1', status: 'VERIFIED', evidence: 'real evidence', verifier: '@HELIX', at: new Date().toISOString() });
+        var repairedAgain = migrateData(repairD);
+        var vexAgain = repairedAgain.participants.find(function (p) { return p.callsign === '@VEX'; });
+        assert(vexAgain.knowledgePath.stages[0].history.length === 1 && vexAgain.knowledgePath.stages[0].history[0].evidenceEventId === 'KP-TEST-1', 'the unconditional structural repair never discards existing stage history');
 
         assert(Array.isArray(d.tasks) && d.tasks.length === 0, 'migrateData backfills an empty tasks[] array for a fresh install');
         assert(Array.isArray(d.handoffs) && d.handoffs.length === 0, 'migrateData backfills an empty handoffs[] array for a fresh install');

@@ -1,5 +1,5 @@
 'use strict';
-module.exports={modules:['app/pages/helpdesk.js'],run:function(ctx,assert){
+module.exports={modules:['persona/knowledge-path.js','app/pages/helpdesk.js'],run:function(ctx,assert){
     var t=ctx.helpDeskCreateTicket({subject:'Runtime offline',description:'Health endpoint unavailable',requester:'Operator',category:'RUNTIME',priority:'CRITICAL'},[],new Date('2026-01-01T00:00:00Z'));
     assert(t.id==='HD-0001','first ticket receives deterministic ID');
     assert(t.assignee==='@VICTOR','runtime ticket routes to @VICTOR');
@@ -11,4 +11,34 @@ module.exports={modules:['app/pages/helpdesk.js'],run:function(ctx,assert){
     assert(t.history.length===2&&t.history[1].action==='STATUS_CHANGED','status transition appends history');
     assert(ctx.helpDeskTransition(t,'INVALID','x','x').error==='INVALID_STATUS','invalid status is rejected');
     assert(ctx.helpDeskNextId([{id:'HD-0009'},{id:'legacy'}])==='HD-0010','ticket IDs advance without collision');
+    var members=[{serviceMemberId:'ATA-ONE-000',callsign:'@ONE',memberProfile:{toolProfile:{assignedTools:['CRM','Email']}}},{serviceMemberId:'ATA-TWO-000',callsign:'@TWO',memberProfile:{toolProfile:{assignedTools:['CRM','Runtime logs']}}}];
+    var registry=ctx.helpDeskToolRegistry(members);
+    assert(registry.uniqueTools===3&&registry.assignments===4,'tool registry deduplicates tools while retaining assignments');
+    var generated=ctx.buildToolReadinessTickets(members,[],new Date('2026-01-01T00:00:00Z'));
+    assert(generated.created.length===2&&generated.created[0].toolInventory.total===2,'tool extrapolation creates one complete readiness ticket per identity');
+    assert(generated.created[0].assignee==='@ONE'&&generated.created[1].assignee==='@TWO','tool tickets remain owned by their canonical identities');
+    var rerun=ctx.buildToolReadinessTickets(members,generated.created,new Date('2026-01-01T00:00:00Z'));
+    assert(rerun.created.length===0&&rerun.skipped.length===2,'tool ticket generation is idempotent and creates no duplicates');
+    var pilotMembers=[{serviceMemberId:'ATA-CINDY-000',callsign:'@CINDY'},{serviceMemberId:'ATA-VICTOR-000',callsign:'@VICTOR'},{serviceMemberId:'ATA-HELIX-000',callsign:'@HELIX'}];
+    var pilot=ctx.buildKnowledgePathPilotTickets(pilotMembers,[],new Date('2026-01-01T00:00:00Z'));
+    assert(pilot.created.length===2&&pilot.errors.length===0,'knowledge-path pilot creates exactly two learner tickets');
+    assert(pilot.created.every(function(x){return x.status==='OPEN'&&x.knowledgePathPilot.stageId==='competencies'&&x.knowledgePathPilot.state==='EVIDENCE_REQUIRED';}),'pilot tickets collect Competency Baseline evidence without verifying a stage');
+    assert(pilot.created[0].knowledgePathPilot.reviewer==='@HELIX'&&pilot.created[1].knowledgePathPilot.reviewer==='@HELIX','@HELIX is retained as independent reviewer, not learner owner');
+    var pilotAgain=ctx.buildKnowledgePathPilotTickets(pilotMembers,pilot.created,new Date('2026-01-01T00:00:00Z'));
+    assert(pilotAgain.created.length===0&&pilotAgain.skipped.length===2,'knowledge-path pilot ticket generation is idempotent');
+    var pt=pilot.created[0],learner={serviceMemberId:'ATA-CINDY-000',knowledgePath:ctx.buildDefaultKnowledgePath()};
+    var incomplete=ctx.submitKnowledgePathPilotEvidence(pt,{standardVersion:'v1'});
+    assert(!incomplete.ok&&incomplete.error==='MISSING_REQUIRED_EVIDENCE','pilot submission rejects incomplete evidence packages');
+    var evidence={standardVersion:'STD-v1',sourceReference:'SRC-1',audienceRole:'Customer Service Operations',trainingMethod:'Controlled workshop',completionArtifact:'ART-1',completedAt:'2026-01-01T01:00',assessmentResult:'PASS 90%',exceptions:'NONE',evidenceReference:'EVID-1',submittedBy:'@CINDY'};
+    var submitted=ctx.submitKnowledgePathPilotEvidence(pt,evidence,new Date('2026-01-01T02:00:00Z'));
+    assert(submitted.ok&&pt.knowledgePathPilot.state==='REVIEW_REQUIRED'&&pt.status==='WAITING'&&pt.assignee==='@HELIX','complete evidence submits to @HELIX without verifying the stage');
+    assert(learner.knowledgePath.stages[0].status==='PENDING','submission alone leaves Competency Baseline PENDING');
+    var wrongReviewer=ctx.reviewKnowledgePathPilotEvidence(pt,'APPROVE','@CINDY','looks good',learner,new Date('2026-01-01T03:00:00Z'));
+    assert(!wrongReviewer.ok&&wrongReviewer.error==='REVIEWER_MISMATCH','learner cannot approve their own pilot evidence');
+    var rejected=ctx.reviewKnowledgePathPilotEvidence(pt,'REJECT','@HELIX','Attach source page',learner,new Date('2026-01-01T03:00:00Z'));
+    assert(rejected.ok&&!rejected.verified&&pt.knowledgePathPilot.state==='CORRECTION_REQUIRED'&&learner.knowledgePath.stages[0].status==='PENDING','rejection returns evidence for correction and preserves PENDING stage');
+    ctx.submitKnowledgePathPilotEvidence(pt,evidence,new Date('2026-01-01T04:00:00Z'));
+    var approved=ctx.reviewKnowledgePathPilotEvidence(pt,'APPROVE','@HELIX','Evidence complete',learner,new Date('2026-01-01T05:00:00Z'));
+    assert(approved.ok&&approved.verified&&pt.status==='RESOLVED','@HELIX approval resolves the pilot ticket');
+    assert(learner.knowledgePath.stages[0].status==='VERIFIED'&&learner.knowledgePath.stages[0].verifier==='@HELIX','approved complete evidence verifies only the targeted Competency Baseline stage');
 }};

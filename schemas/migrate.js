@@ -82,6 +82,49 @@
         return { controlled: controlled.length, issues: issues, valid: issues.length === 0, blockers: aliasAudit.blockers, warnings: aliasAudit.warnings };
     }
 
+    // Turns one completed roster-wide verification batch (see schema step < 24) into individual
+    // activity-log entries, so Live Activity shows real per-identity events instead of one opaque
+    // "batch complete" line. Idempotent via batchId — never re-backfills the same batch twice, and
+    // never reruns verification itself, only formats evidence that already exists.
+    function backfillCompletedBatchActivity(d) {
+        var rc = d.runtimeCanary || {};
+        var batch = rc.batchVerification;
+        if (!batch || batch.status !== 'COMPLETE' || !Array.isArray(batch.results)) return 0;
+        var batchId = batch.batchId || ('BATCH-' + String(batch.startedAt || 'LEGACY').replace(/[^0-9A-Za-z]/g, '').slice(0, 18));
+        batch.batchId = batchId;
+        var already = (d.activityLog || []).some(function (e) { return e && e.batchId === batchId; });
+        if (already) return 0;
+        var executions = {};
+        (rc.executions || []).forEach(function (e) { if (e && e.executionId) executions[e.executionId] = e; });
+        function clock(at) { return String(at || '').slice(11, 19) || '—'; }
+        var entries = [{
+            time: clock(batch.finishedAt), at: batch.finishedAt || new Date().toISOString(),
+            event: 'Roster-wide external verification complete — ' + batch.verified + '/' + batch.total + ' verified, ' + batch.failed + ' failed · ' + batchId,
+            status: 'success', correlationId: batchId + ':COMPLETE', batchId: batchId, outcome: 'COMPLETE', risk: 'ROSTER_WIDE'
+        }];
+        batch.results.forEach(function (row) {
+            var execution = executions[row.executionId] || {};
+            var ext = execution.externalVerification || {};
+            var verifiedAt = row.verifiedAt || ext.verifiedAt || batch.finishedAt || new Date().toISOString();
+            var signature = row.signature || ext.signature || '';
+            entries.push({
+                time: clock(verifiedAt), at: verifiedAt,
+                event: (row.callsign || row.serviceMemberId || 'Unknown identity') + ' external verification ' + (row.ok ? 'PASS' : 'FAIL') + ' · ' + (row.executionId || 'NO_EXECUTION_ID') + ' · verifier: ' + (row.verifierId || ext.verifierId || '?'),
+                status: row.ok ? 'success' : 'error', correlationId: row.executionId || (batchId + ':' + row.serviceMemberId), batchId: batchId,
+                serviceMemberId: row.serviceMemberId, executionId: row.executionId, verifierId: row.verifierId || ext.verifierId,
+                signature: signature, contentHash: signature, outcome: row.ok ? 'PASS' : 'FAIL', risk: 'ROSTER_WIDE'
+            });
+        });
+        entries.push({
+            time: clock(batch.startedAt), at: batch.startedAt || new Date().toISOString(),
+            event: 'Roster-wide external verification started — ' + batch.total + ' canonical identities · ' + batchId,
+            status: 'warning', correlationId: batchId + ':START', batchId: batchId, outcome: 'START', risk: 'ROSTER_WIDE'
+        });
+        entries.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+        d.activityLog = entries.concat(d.activityLog || []).slice(0, 500);
+        return entries.length;
+    }
+
     function migrateData(d) {
         d = d || {};
         if (!Array.isArray(d.participants)) d.participants = [];
@@ -116,6 +159,10 @@
                 d.participants.push(source);
             }
         });
+        // Structural repair is unconditional. Older stored datasets can carry a current schema
+        // number while missing this additive profile; rebuild only missing stage shells and keep
+        // every existing status/evidence/verifier/history record by stage ID.
+        d.participants.filter(function (p) { return !!p.serviceMemberId; }).forEach(reconcileKnowledgePathStructure);
 
         // v3.8 transcript repair: earlier roll calls could claim message counts while persisting an empty messagesList.
         // Backfill only empty Roll Call conversations. These are explicitly LOCAL_RULE_ENGINE responses and never runtime proof.
@@ -439,6 +486,62 @@
                 text:'CARC v3.28.0 added a governed local-first help desk with deterministic HD-#### IDs, SLA tracking, controlled ownership (@CINDY for general intake, @VICTOR for runtime/data/critical), status transitions, append-only ticket history, filtering, and CSV export.'
             });
         }
-        d.schemaVersion = 22;
+        // Steps 23-29: reconciled from a diverged branch (v3.27.0, v3.29.0-v3.32.0) found as
+        // unverified zips in the repo root — diffed file-by-file against live code before any of
+        // this was applied. Two things from that branch were deliberately NOT carried over:
+        // reintroducing data/reference-profiles.js (retired earlier in favor of memberProfile/
+        // skills) and its own step-21 slot (this repo's schema 21 is already the real, committed
+        // Task & Handoff Ledger — that branch never had it, so its differently-numbered content
+        // is placed here instead of overwriting an existing step).
+        if ((d.schemaVersion || 0) < 23) {
+            (d.governance.requirements || []).forEach(function (r) {
+                if (r.id === 'source_access' || r.id === 'permissions') {
+                    r.status = 'PENDING'; r.evidence = ''; r.verifier = ''; r.updatedAt = new Date().toISOString();
+                    r.systemManaged = true;
+                }
+            });
+            d.governance.release = 'CARC v3.27.0 — Governed Sources & Least-Privilege Authorization';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({ time:new Date().toISOString(), type:'security', text:'CARC v3.27.0 made Governed Source Access and Enforced Permissions system-managed runtime controls. Prior manual attestations are reset; only validated source/access records and retained scoped authorization allow/deny evidence can verify these gates.' });
+        }
+        if ((d.schemaVersion || 0) < 24) {
+            d.runtimeCanary = d.runtimeCanary || {};
+            d.runtimeCanary.batchVerification = d.runtimeCanary.batchVerification || null;
+            d.governance.release = 'CARC v3.29.0 — Roster-Wide Individual External Verification';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({ time:new Date().toISOString(), type:'verification', text:'CARC v3.29.0 added a rate-limit-safe sequential orchestrator for 66 distinct individual canary executions and external verification submissions. Registry sweeps remain authorization-only.' });
+        }
+        if ((d.schemaVersion || 0) < 25) {
+            var backfilledActivity = backfillCompletedBatchActivity(d);
+            d.governance.release = 'CARC v3.29.1 — Durable Live Verification Activity';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({ time:new Date().toISOString(), type:'verification', text:'CARC v3.29.1 connected roster-wide external verification to durable Live Activity evidence, expanded retention, and backfilled ' + backfilledActivity + ' event(s) from the retained completed batch without rerunning verification.' });
+            if (d.governance.ledger.length > 1000) d.governance.ledger = d.governance.ledger.slice(0, 1000);
+        }
+        if ((d.schemaVersion || 0) < 26) {
+            d.participants.forEach(function (p) {
+                ((p.knowledgePath && p.knowledgePath.stages) || []).forEach(function (s) { if (!Array.isArray(s.history)) s.history = []; });
+            });
+            d.governance.release = 'CARC v3.30.0 — Knowledge Path Registry & Readiness Progression';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({ time:new Date().toISOString(), type:'training', text:'CARC v3.30.0 operationalized the 66-identity Knowledge Path Registry with append-only stage evidence history, evidence-gated transitions, computed mission eligibility, registry review, stage bottleneck reporting, and 660-row CSV export. Existing progress is preserved; no stage is auto-verified.' });
+        }
+        if ((d.schemaVersion || 0) < 27) {
+            d.governance.release = 'CARC v3.30.1 — Knowledge Path Structural Repair & Export Guard';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({ time:new Date().toISOString(), type:'training', text:'CARC v3.30.1 repaired missing knowledge-path structures for controlled identities without promoting any stage, and blocks incomplete/header-only registry exports.' });
+        }
+        if ((d.schemaVersion || 0) < 28) {
+            d.knowledgePathPilot = d.knowledgePathPilot || { status:'PLANNED', learners:['ATA-CINDY-000', 'ATA-VICTOR-000'], reviewer:'ATA-HELIX-000', stageId:'competencies', ticketIds:[] };
+            d.governance.release = 'CARC v3.31.0 — Controlled Knowledge Path Evidence Pilot';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({ time:new Date().toISOString(), type:'training', text:'CARC v3.31.0 added an idempotent, approval-gated Competency Baseline evidence pilot for @CINDY and @VICTOR with @HELIX as independent reviewer. Tickets never promote Knowledge Path status.' });
+        }
+        if ((d.schemaVersion || 0) < 29) {
+            d.governance.release = 'CARC v3.32.0 — Structured Training Evidence Workflow';
+            d.governance.ledger = d.governance.ledger || [];
+            d.governance.ledger.unshift({ time:new Date().toISOString(), type:'training', text:'CARC v3.32.0 added required-field evidence submission, correction/resubmission, reviewer separation, approve/reject decisions, and targeted stage verification for the controlled pilot. Submission and ticket resolution alone never verify a stage.' });
+        }
+        d.schemaVersion = 29;
         return d;
     }

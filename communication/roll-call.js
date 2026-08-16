@@ -129,9 +129,17 @@
         // gate alone, or every identity would falsely inherit PRODUCTION_VERIFIED off one agent's
         // canary run. It requires this specific identity to have its own verified execution.
         var individuallyVerified = !!(p && p.serviceMemberId && typeof hasVerifiedCanaryExecutionFor === 'function' && hasVerifiedCanaryExecutionFor(p.serviceMemberId));
-        var productionVerification = (gate && gate.complete && individuallyVerified) ? 'PRODUCTION_VERIFIED' : 'NOT_RUNTIME_VERIFIED';
-        var gateDecision = (gate && gate.complete) ? 'PASS' : 'HOLD';
+        var gateComplete = !!(gate && gate.complete);
+        // Three distinct facts, never collapsed into one: an identity can be individually
+        // RUNTIME_VERIFIED while the system-wide gate is still HOLD — that is PENDING_GLOBAL_GATE,
+        // not NOT_RUNTIME_VERIFIED. Mislabeling it the latter would make a genuinely verified
+        // identity look unverified just because unrelated global requirements aren't done yet.
+        var productionVerification = individuallyVerified
+            ? (gateComplete ? 'PRODUCTION_VERIFIED' : 'PENDING_GLOBAL_GATE')
+            : 'NOT_RUNTIME_VERIFIED';
+        var gateDecision = gateComplete ? 'PASS' : 'HOLD';
         return {
+            runtimeVerification: individuallyVerified ? 'RUNTIME_VERIFIED' : 'NOT_RUNTIME_VERIFIED',
             operationalStatus: readiness,
             productionVerification: productionVerification,
             gateDecision: gateDecision

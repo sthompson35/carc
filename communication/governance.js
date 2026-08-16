@@ -38,7 +38,7 @@
     function addGovernanceLedger(type, text) {
         DATA.governance.ledger = DATA.governance.ledger || [];
         DATA.governance.ledger.unshift({ time:new Date().toISOString(), type:type || 'note', text:text });
-        if (DATA.governance.ledger.length > 200) DATA.governance.ledger = DATA.governance.ledger.slice(0,200);
+        if (DATA.governance.ledger.length > 1000) DATA.governance.ledger = DATA.governance.ledger.slice(0,1000);
     }
 
     function renderGovernancePage() {
@@ -59,7 +59,7 @@
         document.getElementById('govGateSummary').textContent = gate.verified + ' of ' + gate.total + ' production requirements independently verified · Registry ' + (gate.registry.valid ? 'PASS' : 'FAIL') + (reasonText ? ' · ' + reasonText : '');
         document.getElementById('govGateRequirements').innerHTML = gate.requirements.map(function (r) {
             var cls = r.status === 'VERIFIED' ? 'badge-active' : 'badge-inactive';
-            var isSystemManaged = r.id === 'independent_verification';
+            var isSystemManaged = r.id === 'independent_verification' || r.id === 'source_access' || r.id === 'permissions';
             var btnLabel = isSystemManaged ? 'View (System-Managed)' : (r.status === 'VERIFIED' ? 'Review Evidence' : 'Record Evidence');
             return '<div class="gate-item"><div class="gate-head"><div class="gate-name">'+esc(r.name)+(isSystemManaged?' <span class="text-xs text-muted">🔒</span>':'')+'</div><span class="badge '+cls+'">'+esc(r.status)+'</span></div><div class="gate-desc">'+esc(r.description)+'</div><div class="gate-meta">Evidence: '+esc(r.evidence || 'NOT RECORDED')+'<br>Verifier: '+esc(r.verifier || 'NOT RECORDED')+'</div><div class="mt-1"><button class="btn btn-outline btn-sm gov-evidence-edit" data-id="'+esc(r.id)+'">'+btnLabel+'</button></div></div>';
         }).join('');
@@ -77,6 +77,7 @@
         renderKnowledgePathSummary();
         renderRuntimeCanary();
         renderCanarySweepSummary();
+        renderBatchVerificationProgress();
         renderCanaryHistory();
         renderExternalRuntime();
         var ledger=(DATA.governance.ledger||[]).slice(0,30);
@@ -95,19 +96,53 @@
         badge.textContent = state.complete + '/' + state.total + ' complete';
         badge.className = 'badge ' + (state.total && state.complete === state.total ? 'badge-active' : 'badge-inactive');
         document.getElementById('kpRegistryProgress').style.width = state.percent + '%';
-        document.getElementById('kpRegistrySummary').innerHTML = '<b class="' + (state.total && state.complete === state.total ? 'audit-ok' : 'audit-bad') + '">' + state.complete + ' / ' + state.total + '</b> identities have completed all 10 knowledge-path stages';
+        var pilotTickets = ((DATA.helpDesk && DATA.helpDesk.tickets) || []).filter(function (t) { return t.sourceKey && t.sourceKey.indexOf('KP-PILOT:') === 0; });
+        document.getElementById('kpRegistrySummary').innerHTML = '<b class="' + (state.total && state.complete === state.total ? 'audit-ok' : 'audit-bad') + '">' + state.complete + ' / ' + state.total + '</b> identities complete · <b>' + state.verifiedStages + '/' + state.totalStages + '</b> stages verified · <b>' + state.eligible + '/' + state.total + '</b> mission eligible · <b>' + pilotTickets.length + '/2</b> pilot tickets';
         renderBarList('kpStageBreakdown', state.stageBreakdown.map(function (s) { return { label: s.name, value: s.verified, display: s.verified + '/' + state.total }; }), { colorFn: function () { return 'purple'; } });
+    }
+
+    function knowledgePathNextStage(p) {
+        var stages = (p.knowledgePath && p.knowledgePath.stages) || [];
+        return stages.find(function (s) { return s.status !== 'VERIFIED'; }) || null;
+    }
+
+    function openKnowledgePathRegistry() {
+        var controlled = DATA.participants.filter(function (p) { return !!p.serviceMemberId; }).sort(function (a, b) { return String(a.callsign).localeCompare(String(b.callsign)); });
+        var state = knowledgePathRegistryState();
+        var rows = controlled.map(function (p) {
+            var ps = evaluateKnowledgePathState(p), next = knowledgePathNextStage(p), eligible = evaluateMissionEligibilityStage(p).allowed;
+            return '<tr><td><b>' + esc(p.callsign) + '</b><div class="text-xs text-muted">' + esc(p.serviceMemberId) + '</div></td><td class="text-sm">' + esc(p.dept || '—') + '</td><td>' + ps.verified + '/' + ps.total + ' · ' + ps.percent + '%</td><td class="text-sm">' + esc(next ? next.name : 'COMPLETE') + '</td><td><span class="badge ' + (eligible ? 'badge-active' : 'badge-inactive') + '">' + (eligible ? 'ELIGIBLE' : 'PENDING') + '</span></td><td><button class="btn btn-outline btn-sm kp-reg-open" data-pid="' + esc(p.id) + '">Review</button></td></tr>';
+        }).join('');
+        var body = '<div class="stats-grid"><div class="stat-card"><div class="label">Identities</div><div class="value">' + state.total + '</div></div><div class="stat-card"><div class="label">Complete</div><div class="value">' + state.complete + '</div></div><div class="stat-card"><div class="label">Verified Stages</div><div class="value">' + state.verifiedStages + '/' + state.totalStages + '</div></div><div class="stat-card"><div class="label">Mission Eligible</div><div class="value">' + state.eligible + '</div></div></div><div class="table-wrap mt-2" style="max-height:55vh;overflow:auto"><table><thead><tr><th>Identity</th><th>Department</th><th>Progress</th><th>Next Required Stage</th><th>Mission Eligibility</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div><p class="text-xs text-muted mt-1">PENDING is the truthful default. Only recorded evidence plus a named verifier can advance a manual stage; Mission Eligibility is computed from its eight prerequisites.</p>';
+        openModal('Knowledge Path Registry — 66 Controlled Identities', body, '<button class="btn btn-outline" id="kpRegClose">Close</button>');
+        document.getElementById('kpRegClose').addEventListener('click', closeModal);
+        $all('.kp-reg-open').forEach(function (btn) { btn.addEventListener('click', function () { var pid = btn.getAttribute('data-pid'); closeModal(); openParticipantDetail(pid); }); });
+    }
+
+    function exportKnowledgePathRegistryCsv() {
+        var rows = knowledgePathRegistryRows(DATA.participants);
+        var audit = validateKnowledgePathRegistryExport(DATA.participants, rows);
+        if (!audit.ok) { addLog('Knowledge Path Registry export blocked — ' + audit.rows + '/' + audit.expected + ' rows · ' + audit.controlled + ' controlled identities', 'error', { correlationId: canaryId('KP-EXPORT-BLOCKED'), risk: 'DATA_INTEGRITY' }); showToast('error', '❌ Export blocked: expected 660 stage records, found ' + audit.rows); return { ok: false, audit: audit }; }
+        downloadCSV('carc_knowledge_path_registry_' + new Date().toISOString().slice(0, 10) + '.csv', toCSV(rows, [
+            { label: 'Service Member ID', get: function (r) { return r.serviceMemberId; } }, { label: 'Callsign', get: function (r) { return r.callsign; } }, { label: 'Name', get: function (r) { return r.name; } }, { label: 'Department', get: function (r) { return r.department; } }, { label: 'Stage ID', get: function (r) { return r.stageId; } }, { label: 'Stage', get: function (r) { return r.stage; } }, { label: 'Status', get: function (r) { return r.status; } }, { label: 'Evidence', get: function (r) { return r.evidence; } }, { label: 'Verifier', get: function (r) { return r.verifier; } }, { label: 'Updated At', get: function (r) { return r.updatedAt; } }, { label: 'History Events', get: function (r) { return r.historyEvents; } }
+        ]));
+        addLog('Knowledge Path Registry exported — ' + rows.length + ' stage records', 'success', { correlationId: canaryId('KP-EXPORT'), risk: 'NORMAL' });
+        showToast('success', '⬇️ Exported ' + rows.length + ' knowledge-path stage records');
+        return { ok: true, audit: audit };
     }
 
     function openGovernanceEvidenceModal(id) {
         var req = (DATA.governance.requirements || []).find(function(r){return r.id===id;}); if(!req) return;
-        if (req.id === 'independent_verification') {
+        if (req.id === 'independent_verification' || req.id === 'source_access' || req.id === 'permissions') {
+            var controlHelp = req.id === 'independent_verification'
+                ? 'Run Canary → configure an External Runtime Endpoint → Submit for Verification.'
+                : (req.id === 'source_access' ? 'External Runtime Endpoint → Register Source → Refresh Controls.' : 'External Runtime Endpoint → Refresh Controls (runs a scoped allow/deny evidence check).');
             var body = '<div class="form-group"><label>Requirement</label><input value="'+esc(req.name)+'" disabled></div>' +
-                '<p class="text-sm">This requirement is <b>system-managed</b> — it cannot be self-attested. It is set automatically only when the Runtime Execution Canary is submitted to a configured external endpoint and the verifier responds with <code>verified: true</code>.</p>' +
+                '<p class="text-sm">This requirement is <b>system-managed</b> — it cannot be self-attested. Its state is derived from retained runtime control evidence.</p>' +
                 '<div class="kv-row"><span>Current Status</span><span class="badge '+(req.status==='VERIFIED'?'badge-active':'badge-inactive')+'">'+esc(req.status)+'</span></div>' +
                 (req.evidence ? '<div class="kv-row"><span>Evidence</span><span class="text-xs">'+esc(req.evidence)+'</span></div>' : '') +
                 (req.verifier ? '<div class="kv-row"><span>Verifier</span><b>'+esc(req.verifier)+'</b></div>' : '') +
-                '<p class="text-xs text-muted mt-2">To change this: Runtime Execution Canary panel → Run Canary → configure an External Runtime Endpoint → Submit for Verification.</p>';
+                '<p class="text-xs text-muted mt-2">To change this: '+esc(controlHelp)+'</p>';
             openModal('Production Evidence — '+req.name, body, '<button class="btn btn-outline" id="geCancel">Close</button>');
             document.getElementById('geCancel').addEventListener('click', closeModal);
             return;
@@ -134,8 +169,12 @@
         document.getElementById('btnGovAudit').addEventListener('click',function(){var a=auditCanonicalRegistry(DATA.participants); DATA.registryAudit=a; addGovernanceLedger('audit','Canonical registry audit → '+(a.valid?'PASS':'FAIL')+' ('+a.issues.length+' issues)'); saveData(); renderGovernancePage(); showToast(a.valid?'success':'error',(a.valid?'✅':'❌')+' Registry audit '+(a.valid?'passed':'failed'));});
         document.getElementById('btnGovExport').addEventListener('click',exportGovernanceEvidence);
         document.getElementById('btnGovAddNote').addEventListener('click',openGovernanceNoteModal);
+        document.getElementById('btnOpenKnowledgeRegistry').addEventListener('click',openKnowledgePathRegistry);
+        document.getElementById('btnExportKnowledgeRegistry').addEventListener('click',exportKnowledgePathRegistryCsv);
+        document.getElementById('btnBuildKnowledgePilot').addEventListener('click',createKnowledgePathPilotTickets);
         document.getElementById('btnRunCanary').addEventListener('click',runRuntimeCanary);
         document.getElementById('btnRunSweep').addEventListener('click',runRegistrySweep);
+        document.getElementById('btnSubmitAllIndividuals').addEventListener('click',runAndSubmitAllIndividualCanaries);
         document.getElementById('btnExportCanary').addEventListener('click',exportRuntimeCanary);
         document.getElementById('btnExportCanaryCsv').addEventListener('click',exportRuntimeCanaryCsv);
         $all('th.sortable', document.getElementById('page-governance')).forEach(function (th) {

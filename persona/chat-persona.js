@@ -5,7 +5,7 @@
         var mp = p.missionProfile || {};
         var q = String(query || '').toLowerCase();
         var sf = canonicalStatusFields(p);
-        var statusLine = 'Operational Status: ' + sf.operationalStatus + '. Production Verification: ' + sf.productionVerification + '. Gate Decision: ' + sf.gateDecision + '.';
+        var statusLine = 'Operational Status: ' + sf.operationalStatus + '. Runtime Verification: ' + sf.runtimeVerification + '. Production Verification: ' + sf.productionVerification + '. Gate Decision: ' + sf.gateDecision + '.';
         if (/status|how are you|how('?s| is) .*doing/.test(q)) {
             return p.callsign + ': Operational and ready within delegated authority — ' + p.role + '. ' + statusLine;
         }

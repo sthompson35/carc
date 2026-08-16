@@ -1,9 +1,12 @@
 'use strict';
 // communication/runtime-sync.js
 
-    function runRuntimeCanary() {
+    function runRuntimeCanary() { return runRuntimeCanaryFor(); }
+
+    function runRuntimeCanaryFor(targetOverride, opts) {
+        opts = opts || {};
         var rc = DATA.runtimeCanary = DATA.runtimeCanary || {};
-        var targetId = (document.getElementById('canaryTarget') || {}).value || rc.targetServiceMemberId || 'ATA-VEX-000';
+        var targetId = targetOverride || (document.getElementById('canaryTarget') || {}).value || rc.targetServiceMemberId || 'ATA-VEX-000';
         rc.targetServiceMemberId = targetId;
         var p = (function () { try { return resolveCanonicalIdentity(targetId, DATA.participants); } catch (e) { return null; } })();
         var started = new Date().toISOString();
@@ -49,19 +52,22 @@
         rc.executionResult = result;
         rc.runtimeVerified = false;
         rc.independentVerification = 'PENDING';
-        rc.telemetry = telemetry.concat(rc.telemetry || []).slice(0,100);
-        rc.evidence = [evidence].concat(rc.evidence || []).slice(0,50);
+        rc.telemetry = telemetry.concat(rc.telemetry || []).slice(0,1000);
+        rc.evidence = [evidence].concat(rc.evidence || []).slice(0,500);
         rc.executions = [{
             executionId:executionId, missionId:missionId, evidenceId:evidenceId,
             targetServiceMemberId:targetId, startedAt:started, result:result,
             runtimeVerified:false, independentVerification:'PENDING'
-        }].concat(rc.executions || []).slice(0,50);
+        }].concat(rc.executions || []).slice(0,500);
         if (p) p.runtimeVerification = evaluateRuntimeVerification(p);
 
         addGovernanceLedger('canary', (p ? p.callsign : targetId) + ' canary → ' + result + ' · ' + executionId + ' · NOT_RUNTIME_VERIFIED');
         saveData();
-        renderGovernancePage();
-        showToast(auth.allowed ? 'success' : 'error', auth.allowed ? '✅ Local canary complete — external runtime verification still required' : '❌ Canary blocked: '+auth.reason);
+        if (!opts.silent) {
+            renderGovernancePage();
+            showToast(auth.allowed ? 'success' : 'error', auth.allowed ? '✅ Local canary complete — external runtime verification still required' : '❌ Canary blocked: '+auth.reason);
+        }
+        return { ok:auth.allowed, target:p, executionId:executionId, authorization:auth, result:result };
     }
 
     // Authorization-only sweep across the whole controlled registry — cheap enough to run on
@@ -286,6 +292,8 @@
                     '<button class="btn btn-outline btn-sm" id="btnSyncCommands"'+(configured?'':' disabled')+'>🛡️ Sync Commands to Runtime</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnSyncTasks"'+(configured?'':' disabled')+'>🗂️ Sync Tasks to Runtime</button>'+
                     '<button class="btn btn-outline btn-sm" id="btnSyncHandoffs"'+(configured?'':' disabled')+'>🤝 Sync Handoffs to Runtime</button>'+
+                    '<button class="btn btn-outline btn-sm" id="btnRegisterSource"'+(configured?'':' disabled')+'>📇 Register Source</button>'+
+                    '<button class="btn btn-outline btn-sm" id="btnRefreshControls"'+(configured?'':' disabled')+'>🧾 Refresh Controls</button>'+
                     (configured && (ep.url.startsWith('http://')||ep.url.startsWith('https://')) ? '<a href="'+esc(ep.url)+'/admin" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">🌐 Open Admin</a>' : '')+
                 '</div>'+
                 '<div class="text-xs text-muted mt-1">Bearer token is stored in browser localStorage only — never included in evidence exports. Auto-sync mutates runtime state on a timer once enabled — off by default.</div>';
@@ -298,6 +306,8 @@
             if (configured) document.getElementById('btnSyncCommands').addEventListener('click', function(){ syncChatCommandsToRuntime(); });
             if (configured) document.getElementById('btnSyncTasks').addEventListener('click', function(){ syncTasksToRuntime(); });
             if (configured) document.getElementById('btnSyncHandoffs').addEventListener('click', function(){ syncHandoffsToRuntime(); });
+            if (configured) document.getElementById('btnRegisterSource').addEventListener('click', openGovernedSourceModal);
+            if (configured) document.getElementById('btnRefreshControls').addEventListener('click', function(){ refreshRuntimeControlEvidence(); });
             document.getElementById('chkAutoSync').addEventListener('change', function(e){ toggleAutoSync(e.target.checked); });
         }
         var vrEl = document.getElementById('govVerificationResponse');
@@ -369,11 +379,12 @@
     }
 
 
-    function submitForExternalVerification() {
+    function submitForExternalVerification(opts) {
+        opts = (opts && opts.silent === true) ? opts : {};
         var rc = DATA.runtimeCanary || {};
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
-        if (!ep.url) { showToast('error', '❌ No endpoint URL configured'); return; }
-        if (!rc.lastExecutionId) { showToast('error', '❌ No canary execution to verify'); return; }
+        if (!ep.url) { if (!opts.silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ok:false,error:'NO_ENDPOINT'}); }
+        if (!rc.lastExecutionId) { if (!opts.silent) showToast('error', '❌ No canary execution to verify'); return Promise.resolve({ok:false,error:'NO_EXECUTION'}); }
         var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var submitBtn = document.getElementById('btnSubmitVerification');
         if (submitBtn) submitBtn.disabled = true;
@@ -389,10 +400,10 @@
             authorization: rc.authorization,
             executionResult: rc.executionResult
         };
-        rc.telemetry = [{ time:submittedAt, event:'EXTERNAL_VERIFICATION_SUBMITTED', executionId:rc.lastExecutionId, detail:ep.url }].concat(rc.telemetry || []).slice(0,100);
+        rc.telemetry = [{ time:submittedAt, event:'EXTERNAL_VERIFICATION_SUBMITTED', executionId:rc.lastExecutionId, detail:ep.url }].concat(rc.telemetry || []).slice(0,1000);
         var ctrl = new AbortController();
         var tid = setTimeout(function(){ ctrl.abort(); }, 15000);
-        fetch(ep.url, { method:'POST', headers:headers, body:JSON.stringify(body), signal:ctrl.signal })
+        return fetch(ep.url, { method:'POST', headers:headers, body:JSON.stringify(body), signal:ctrl.signal })
             .then(function(r) { return r.json().then(function(d){ return { ok:r.ok, status:r.status, data:d }; }); })
             .then(function(res) {
                 clearTimeout(tid);
@@ -418,22 +429,196 @@
                 if (rc.executions && rc.executions[0]) {
                     rc.executions[0].runtimeVerified = verified;
                     rc.executions[0].independentVerification = verified ? 'RUNTIME_VERIFIED' : 'REJECTED';
+                    rc.executions[0].externalVerification = ext;
                 }
-                rc.telemetry = [{ time:new Date().toISOString(), event:verified?'EXTERNAL_VERIFICATION_PASS':'EXTERNAL_VERIFICATION_FAIL', executionId:rc.lastExecutionId, detail:'verifier: '+(vr.verifierId||'?')+(vr.reason?' · '+vr.reason:'') }].concat(rc.telemetry||[]).slice(0,100);
+                rc.telemetry = [{ time:new Date().toISOString(), event:verified?'EXTERNAL_VERIFICATION_PASS':'EXTERNAL_VERIFICATION_FAIL', executionId:rc.lastExecutionId, detail:'verifier: '+(vr.verifierId||'?')+(vr.reason?' · '+vr.reason:'') }].concat(rc.telemetry||[]).slice(0,1000);
                 addGovernanceLedger('verification', rc.targetServiceMemberId+' external verification → '+(verified?'RUNTIME_VERIFIED':'REJECTED')+' · verifier: '+(vr.verifierId||'?'));
                 syncIndependentVerificationRequirement(ext, rc);
                 if (verified) reconcileProductionState();
-                saveData(); renderGovernancePage();
-                showToast(verified?'success':'error', verified?'✅ RUNTIME_VERIFIED — canary evidence accepted by external verifier':'❌ Verification REJECTED: '+(vr.reason||'no reason provided'));
+                saveData(); if (!opts.silent) renderGovernancePage();
+                if (!opts.silent) showToast(verified?'success':'error', verified?'✅ RUNTIME_VERIFIED — canary evidence accepted by external verifier':'❌ Verification REJECTED: '+(vr.reason||'no reason provided'));
+                return {ok:verified, verified:verified, externalVerification:ext, error:verified?null:(vr.reason||'REJECTED')};
             })
             .catch(function(err) {
                 clearTimeout(tid);
                 var msg = (err && err.name === 'AbortError') ? 'timeout after 15s' : (err.message || 'network error');
-                rc.telemetry = [{ time:new Date().toISOString(), event:'EXTERNAL_VERIFICATION_ERROR', executionId:rc.lastExecutionId, detail:msg }].concat(rc.telemetry||[]).slice(0,100);
+                rc.telemetry = [{ time:new Date().toISOString(), event:'EXTERNAL_VERIFICATION_ERROR', executionId:rc.lastExecutionId, detail:msg }].concat(rc.telemetry||[]).slice(0,1000);
                 addGovernanceLedger('verification', 'External verification request failed: '+msg);
-                saveData(); renderGovernancePage();
-                showToast('error', '❌ Verification request failed: '+msg);
+                saveData(); if (!opts.silent) renderGovernancePage();
+                if (!opts.silent) showToast('error', '❌ Verification request failed: '+msg);
+                return {ok:false,error:msg};
             });
+    }
+
+    function endpointAuthHeaders() {
+        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var headers = { 'Content-Type':'application/json' };
+        if (token) headers.Authorization = 'Bearer ' + token;
+        return headers;
+    }
+
+    function updateRuntimeManagedRequirement(id, result, generatedAt) {
+        var req = (DATA.governance.requirements || []).find(function (r) { return r.id === id; });
+        if (!req) return;
+        req.status = result.verified ? 'VERIFIED' : 'PENDING';
+        req.evidence = result.verified
+            ? 'Runtime control evidence at ' + generatedAt + ': ' + JSON.stringify(result)
+            : 'Runtime control pending: ' + (result.issues || []).join(', ');
+        req.verifier = result.verified ? 'CARC-RUNTIME-CONTROL-PLANE' : '';
+        req.updatedAt = generatedAt;
+    }
+
+    function refreshRuntimeControlEvidence(opts) {
+        opts = opts || {};
+        var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (!ep.url) return Promise.resolve({ ok:false, error:'NO_ENDPOINT' });
+        var base = ep.url.replace(/\/+$/, '');
+        // Controlled negative authorization probe: the CARC operator token intentionally lacks
+        // tokens:admin. A 403 is retained by the runtime as real least-privilege denial evidence.
+        return fetch(base + '/api/tokens', { headers:endpointAuthHeaders() })
+            .then(function () { return fetch(base + '/api/governance/control-status', { headers:endpointAuthHeaders() }); })
+            .then(function (r) { return r.json().then(function (d) { return { ok:r.ok, status:r.status, data:d }; }); })
+            .then(function (res) {
+                if (!res.ok) throw new Error((res.data && (res.data.reason || res.data.error)) || ('HTTP ' + res.status));
+                updateRuntimeManagedRequirement('source_access', res.data.governedSourceAccess, res.data.generatedAt);
+                updateRuntimeManagedRequirement('permissions', res.data.enforcedPermissions, res.data.generatedAt);
+                addGovernanceLedger('controls', 'Runtime controls refreshed → source access ' + (res.data.governedSourceAccess.verified?'VERIFIED':'PENDING') + ' · permissions ' + (res.data.enforcedPermissions.verified?'VERIFIED':'PENDING'));
+                reconcileProductionState(); saveData(); renderGovernancePage();
+                if (!opts.silent) showToast((res.data.governedSourceAccess.verified && res.data.enforcedPermissions.verified)?'success':'info', '🧾 Runtime control evidence refreshed');
+                return { ok:true, data:res.data };
+            }).catch(function (err) {
+                if (!opts.silent) showToast('error', '❌ Control refresh failed: ' + (err.message || 'network error'));
+                return { ok:false, error:err.message || 'network error' };
+            });
+    }
+
+    function openGovernedSourceModal() {
+        var now = new Date();
+        var due = new Date(now.getTime() + 30 * 86400000);
+        var body =
+            '<div class="form-group"><label>Source ID</label><input id="gsId" placeholder="SRC-CANONICAL-ROSTER-001"></div>'+
+            '<div class="form-group"><label>Name</label><input id="gsName" placeholder="Authoritative source name"></div>'+
+            '<div class="form-group"><label>Authority / Owner</label><input id="gsAuthority" placeholder="Named authority responsible for this source"></div>'+
+            '<div class="form-group"><label>Source URI</label><input id="gsUri" placeholder="file, repository, database, or controlled-record URI"></div>'+
+            '<div class="form-group"><label>SHA-256 Content Hash</label><input id="gsHash" placeholder="64 hexadecimal characters"></div>'+
+            '<div class="form-group"><label>Permission Basis</label><input id="gsPermission" placeholder="Approval, license, delegation, or access policy"></div>'+
+            '<div class="form-group"><label>Provenance</label><textarea id="gsProvenance" rows="2" placeholder="Origin and chain of custody"></textarea></div>'+
+            '<div class="form-group"><label>Freshness Checked At</label><input id="gsFresh" value="'+esc(now.toISOString())+'"></div>'+
+            '<div class="form-group"><label>Review Due At</label><input id="gsDue" value="'+esc(due.toISOString())+'"></div>'+
+            '<div class="form-group"><label>Registered By</label><input id="gsBy" placeholder="Named operator"></div>';
+        openModal('Register Governed Source', body, '<button class="btn btn-outline" id="gsCancel">Cancel</button><button class="btn btn-primary" id="gsSave">Register & Validate Access</button>');
+        document.getElementById('gsCancel').addEventListener('click', closeModal);
+        document.getElementById('gsSave').addEventListener('click', function () {
+            var payload = { sourceId:document.getElementById('gsId').value.trim().toUpperCase(), name:document.getElementById('gsName').value.trim(), authority:document.getElementById('gsAuthority').value.trim(), sourceUri:document.getElementById('gsUri').value.trim(), contentHash:document.getElementById('gsHash').value.trim(), permissionBasis:document.getElementById('gsPermission').value.trim(), provenance:document.getElementById('gsProvenance').value.trim(), status:'ACTIVE', freshnessCheckedAt:document.getElementById('gsFresh').value.trim(), reviewDueAt:document.getElementById('gsDue').value.trim(), registeredBy:document.getElementById('gsBy').value.trim() };
+            var ep = DATA.governance.endpoint || {}, base = ep.url.replace(/\/+$/, '');
+            fetch(base + '/api/sources', { method:'POST', headers:endpointAuthHeaders(), body:JSON.stringify(payload) })
+                .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.reason || d.error || ('HTTP ' + r.status)); return d; }); })
+                .then(function () { return fetch(base + '/api/sources/' + encodeURIComponent(payload.sourceId) + '/access', { method:'POST', headers:endpointAuthHeaders(), body:JSON.stringify({ purpose:'CARC production-governance validation' }) }); })
+                .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.reason || d.error || ('HTTP ' + r.status)); return d; }); })
+                .then(function () { closeModal(); showToast('success', '✅ Governed source registered and access validated'); return refreshRuntimeControlEvidence(); })
+                .catch(function (err) { showToast('error', '❌ Source registration failed: ' + err.message); });
+        });
+    }
+
+    function batchVerificationDelay() {
+        return new Promise(function(resolve){ setTimeout(resolve, 1100); });
+    }
+
+    function recordVerificationBatchActivity(batch, phase, row) {
+        if (typeof addLog !== 'function' || !batch) return null;
+        var batchId = batch.batchId || 'BATCH-UNKNOWN';
+        var status = phase === 'COMPLETE' || phase === 'PASS' ? 'success' : (phase === 'START' ? 'warning' : 'error');
+        var event;
+        var meta = { batchId:batchId, risk:'ROSTER_WIDE', outcome:phase };
+        if (phase === 'START') {
+            meta.correlationId = batchId + ':START';
+            event = 'Roster-wide external verification started — ' + batch.total + ' canonical identities · ' + batchId;
+        } else if (phase === 'COMPLETE') {
+            meta.correlationId = batchId + ':COMPLETE';
+            event = 'Roster-wide external verification complete — ' + batch.verified + '/' + batch.total + ' verified, ' + batch.failed + ' failed · ' + batchId;
+        } else if (phase === 'FAILED') {
+            meta.correlationId = batchId + ':FAILED';
+            event = 'Roster-wide external verification failed — ' + (batch.error || 'unknown error') + ' · ' + batchId;
+        } else {
+            row = row || {};
+            meta.correlationId = row.executionId || (batchId + ':' + row.serviceMemberId);
+            meta.serviceMemberId = row.serviceMemberId;
+            meta.executionId = row.executionId;
+            meta.verifierId = row.verifierId;
+            meta.signature = row.signature;
+            meta.contentHash = row.signature;
+            event = (row.callsign || row.serviceMemberId || 'Unknown identity') + ' external verification ' + phase + ' · ' + (row.executionId || 'NO_EXECUTION_ID') + (row.verifierId ? ' · verifier: ' + row.verifierId : '');
+        }
+        return addLog(event, status, meta);
+    }
+
+    function buildIndividualVerificationPlan(participants, authorizationFn) {
+        var canonical = canonicalRosterIndex();
+        var targets = (participants || []).filter(function(p){return p && p.serviceMemberId && canonical[p.serviceMemberId];}).sort(function(a,b){return String(a.serviceMemberId).localeCompare(String(b.serviceMemberId));});
+        var checks = targets.map(function(p){return {p:p,auth:authorizationFn(p)};});
+        return {
+            targets:targets,
+            authorized:checks.filter(function(x){return x.auth.allowed;}),
+            blocked:checks.filter(function(x){return !x.auth.allowed;}),
+            delayMs:1100
+        };
+    }
+
+    function runAndSubmitAllIndividualCanaries() {
+        var rc = DATA.runtimeCanary = DATA.runtimeCanary || {};
+        var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (!ep.url || ep.lastTestResult !== 'OK') { showToast('error','❌ Connect and test the external runtime before starting the individual batch'); return Promise.resolve({ok:false,error:'ENDPOINT_NOT_CONNECTED'}); }
+        if (rc.batchVerification && rc.batchVerification.status === 'RUNNING') { showToast('warning','A roster-wide verification batch is already running'); return Promise.resolve({ok:false,error:'BATCH_ALREADY_RUNNING'}); }
+        var plan = buildIndividualVerificationPlan(DATA.participants,evaluateCanaryAuthorization);
+        var targets = plan.targets;
+        var unauthorized = plan.blocked;
+        if (unauthorized.length) {
+            rc.batchVerification = {status:'BLOCKED',startedAt:new Date().toISOString(),total:targets.length,completed:0,verified:0,failed:unauthorized.length,current:null,results:unauthorized.map(function(x){return {serviceMemberId:x.p.serviceMemberId,callsign:x.p.callsign,ok:false,error:x.auth.reason};})};
+            saveData(); renderGovernancePage(); showToast('error','❌ Batch blocked: '+unauthorized.length+' identities failed authorization'); return Promise.resolve({ok:false,error:'AUTHORIZATION_FAILED'});
+        }
+        if (!confirm('Run and externally submit '+targets.length+' individual canaries? This creates separate execution evidence for every canonical identity, runs sequentially for rate-limit safety, and stops on the first failure. Allow about 2 minutes.')) return Promise.resolve({ok:false,error:'APPROVAL_DECLINED'});
+        rc.batchVerification = {batchId:canaryId('BATCH'),status:'RUNNING',startedAt:new Date().toISOString(),finishedAt:null,total:targets.length,completed:0,verified:0,failed:0,current:null,results:[]};
+        recordVerificationBatchActivity(rc.batchVerification,'START');
+        saveData(); renderGovernancePage();
+        var chain = Promise.resolve();
+        targets.forEach(function(p,index){
+            chain = chain.then(function(){
+                rc.batchVerification.current = p.callsign;
+                rc.batchVerification.completed = index;
+                saveData(); renderBatchVerificationProgress();
+                var local = runRuntimeCanaryFor(p.serviceMemberId,{silent:true});
+                if (!local.ok) throw new Error(p.callsign+' local canary blocked: '+local.authorization.reason);
+                return submitForExternalVerification({silent:true}).then(function(result){
+                    var row={serviceMemberId:p.serviceMemberId,callsign:p.callsign,executionId:local.executionId,ok:result.ok,verifierId:result.externalVerification&&result.externalVerification.verifierId,signature:result.externalVerification&&result.externalVerification.signature,verifiedAt:result.externalVerification&&result.externalVerification.verifiedAt,error:result.error||null};
+                    rc.batchVerification.results.push(row); rc.batchVerification.completed=index+1;
+                    recordVerificationBatchActivity(rc.batchVerification,result.ok?'PASS':'FAIL',row);
+                    if(result.ok) rc.batchVerification.verified++; else {rc.batchVerification.failed++; throw new Error(p.callsign+' verification failed: '+(result.error||'REJECTED'));}
+                    p.runtimeVerification=evaluateRuntimeVerification(p); reconcileProductionState(); saveData(); renderBatchVerificationProgress();
+                    return index < targets.length-1 ? batchVerificationDelay() : null;
+                });
+            });
+        });
+        return chain.then(function(){
+            rc.batchVerification.status='COMPLETE';rc.batchVerification.current=null;rc.batchVerification.finishedAt=new Date().toISOString();
+            addGovernanceLedger('verification','Roster-wide individual external verification → '+rc.batchVerification.verified+'/'+rc.batchVerification.total+' RUNTIME_VERIFIED');
+            recordVerificationBatchActivity(rc.batchVerification,'COMPLETE');
+            saveData();renderGovernancePage();showToast('success','✅ '+rc.batchVerification.verified+'/'+rc.batchVerification.total+' individual identities externally verified');
+            return {ok:true,batch:rc.batchVerification};
+        }).catch(function(err){
+            rc.batchVerification.status='FAILED';rc.batchVerification.current=null;rc.batchVerification.finishedAt=new Date().toISOString();rc.batchVerification.error=err.message;
+            addGovernanceLedger('verification','Roster-wide individual verification stopped: '+err.message);recordVerificationBatchActivity(rc.batchVerification,'FAILED');saveData();renderGovernancePage();showToast('error','❌ Batch stopped: '+err.message);
+            return {ok:false,error:err.message,batch:rc.batchVerification};
+        });
+    }
+
+    function renderBatchVerificationProgress() {
+        var el=document.getElementById('batchVerificationProgress');if(!el)return;
+        var b=(DATA.runtimeCanary||{}).batchVerification;
+        if(!b){el.innerHTML='<div class="text-muted text-sm">No roster-wide individual verification batch has run.</div>';return;}
+        var pct=b.total?Math.round((b.completed/b.total)*100):0;
+        el.innerHTML='<div class="kv-row"><span>Status</span><b class="'+(b.status==='COMPLETE'?'audit-ok':b.status==='FAILED'||b.status==='BLOCKED'?'audit-bad':'audit-warn')+'">'+esc(b.status)+'</b></div>'+
+            '<div class="kv-row"><span>Progress</span><b>'+b.completed+' / '+b.total+' · '+pct+'%</b></div><div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div>'+
+            '<div class="kv-row"><span>Verified / Failed</span><span>'+b.verified+' / '+b.failed+'</span></div>'+(b.current?'<div class="kv-row"><span>Current identity</span><b>'+esc(b.current)+'</b></div>':'')+(b.error?'<div class="text-xs audit-bad mt-1">'+esc(b.error)+'</div>':'');
     }
 
     // Both sync functions return a Promise<{ok, error?}> so the auto-sync orchestrator can

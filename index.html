@@ -633,7 +633,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                     <input type="file" id="importPartCsvInput" accept=".csv,text/csv" class="hidden">
 
                     <div class="info-banner" style="margin:10px 0 12px;padding:10px 12px;border-radius:8px;background:var(--gray-50);border:1px solid var(--gray-200);font-size:.75rem;line-height:1.45;">
-                        <b>CARC v3.28.0 canonical operating registry:</b> 66 controlled Academy identities expose exact callsign, <code>TROOPER: ""</code>, <code>AGENT: (id)</code>, Service Member ID, Callsign ID, legacy lineage, role, and command. <b>Operational Status: MISSION_READY</b> · <b>Production Verification: NOT_RUNTIME_VERIFIED</b> · <b>Gate Decision: HOLD</b> until governed source access, enforced permissions, controlled workflow, runtime telemetry, audit evidence, and independent verification are proven.
+                        <b>CARC canonical operating registry:</b> 66 controlled Academy identities expose exact callsign, <code>TROOPER: ""</code>, <code>AGENT: (id)</code>, Service Member ID, Callsign ID, legacy lineage, role, and command. Runtime verification is tracked per identity and separately from the system-wide production gate; a verified canary may be <b>RUNTIME_VERIFIED</b> while Production Verification remains <b>PENDING_GLOBAL_GATE</b> and Gate Decision remains <b>HOLD</b>, until governed source access, enforced permissions, controlled workflow, runtime telemetry, audit evidence, and independent verification are proven for every identity.
                     </div>
                     <div class="table-wrap">
                         <table>
@@ -840,7 +840,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                     </div>
                 </div>
                 <div class="panel">
-                    <div class="panel-header"><div class="panel-title">🧭 Knowledge Path Registry</div><span class="badge" id="kpRegistryBadge">—</span></div>
+                    <div class="panel-header"><div class="panel-title">🧭 Knowledge Path Registry</div><div class="panel-actions"><span class="badge" id="kpRegistryBadge">—</span><button class="btn btn-primary btn-sm" id="btnBuildKnowledgePilot">Build Pilot Tickets (2)</button><button class="btn btn-outline btn-sm" id="btnOpenKnowledgeRegistry">Open Registry</button><button class="btn btn-outline btn-sm" id="btnExportKnowledgeRegistry">⬇️ Export CSV</button></div></div>
                     <div class="progress-track"><div class="progress-fill" id="kpRegistryProgress" style="width:0%"></div></div>
                     <div class="text-xs text-muted mt-1" id="kpRegistrySummary"></div>
                     <div class="mt-2" id="kpStageBreakdown"></div>
@@ -852,6 +852,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                             <div class="panel-actions">
                                 <button class="btn btn-primary btn-sm" id="btnRunCanary">▶️ Run Canary</button>
                                 <button class="btn btn-outline btn-sm" id="btnRunSweep">🧪 Run Full Sweep (66)</button>
+                                <button class="btn btn-success btn-sm" id="btnSubmitAllIndividuals">🚀 Verify All Individuals (66)</button>
                                 <button class="btn btn-outline btn-sm" id="btnExportCanary">⬇️ Export JSON</button>
                                 <button class="btn btn-outline btn-sm" id="btnExportCanaryCsv">⬇️ Export CSV</button>
                             </div>
@@ -863,6 +864,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                         <div id="canarySummary"></div>
                         <div class="text-xs text-muted mt-1">This canary validates the CARC execution contract locally. It does not satisfy production runtime-evidence gates unless an external governed runtime and independent verifier provide evidence.</div>
                         <div id="canarySweepSummary" class="mt-2"></div>
+                        <div class="mt-2"><b class="text-sm">Roster-Wide Individual Verification</b><div id="batchVerificationProgress" class="mt-1"></div></div>
                     </div>
                     <div class="panel">
                         <div class="panel-header"><div class="panel-title">📡 Canary Telemetry &amp; Evidence</div><span class="badge" id="canaryTelemetryCount">0 events</span></div>
@@ -980,6 +982,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
                 <div class="panel-header" style="margin-bottom:14px;">
                     <div><div class="panel-title">🎫 CARC Help Desk</div><div class="text-xs text-muted">Governed intake · controlled ownership · SLA evidence · retained history</div></div>
                     <div class="panel-actions">
+                        <button class="btn btn-outline btn-sm" id="btnBuildToolTickets">🧰 Build Tool Tickets</button>
                         <button class="btn btn-outline btn-sm" id="btnExportHelpDesk">⬇️ Export CSV</button>
                         <button class="btn btn-primary btn-sm" id="btnNewHelpTicket">➕ New Ticket</button>
                     </div>
@@ -1263,6 +1266,7 @@ code.copyable:hover { background:var(--gray-100); color:var(--primary); }
 <script src="config/constants.js"></script>
 <script src="config/labels.js"></script>
 <script src="app/util.js"></script>
+<script src="data/source-authority.js"></script>
 <script src="data/roster.js"></script>
 <script src="persona/mission-doctrine.js"></script>
 <script src="persona/identity.js"></script>

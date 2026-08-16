@@ -16,12 +16,15 @@
 
     var saveTimer = null;
 
+    function saveDataNow() {
+        clearTimeout(saveTimer);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA)); } catch (e) { /* storage full/unavailable */ }
+        updateStorageSize();
+    }
+
     function saveData() {
         clearTimeout(saveTimer);
-        saveTimer = setTimeout(function () {
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA)); } catch (e) { /* storage full/unavailable */ }
-            updateStorageSize();
-        }, 150);
+        saveTimer = setTimeout(saveDataNow, 150);
     }
 
     function updateStorageSize() {
