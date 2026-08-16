@@ -206,6 +206,7 @@
 
     function renderExternalRuntime() {
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (endpointTokenMissing()) { ep.tokenSet = false; ep.lastTestResult = null; }
         var rc = DATA.runtimeCanary || {};
         var configured = !!(ep.url);
         var hasCanary = (rc.state === 'CANARY_COMPLETE' || rc.state === 'RUNTIME_VERIFIED') && !!rc.lastExecutionId;
@@ -387,6 +388,11 @@
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
         if (!ep.url) { if (!opts.silent) showToast('error', '❌ No endpoint URL configured'); return Promise.resolve({ok:false,error:'NO_ENDPOINT'}); }
         if (!rc.lastExecutionId) { if (!opts.silent) showToast('error', '❌ No canary execution to verify'); return Promise.resolve({ok:false,error:'NO_EXECUTION'}); }
+        if (endpointTokenMissing()) {
+            ep.tokenSet = false; saveData(); renderGovernancePage();
+            if (!opts.silent) showToast('error', '❌ Runtime token missing — it does not survive a tab close. Reconfigure the endpoint.');
+            return Promise.resolve({ok:false,error:'TOKEN_MISSING'});
+        }
         var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var submitBtn = document.getElementById('btnSubmitVerification');
         if (submitBtn) submitBtn.disabled = true;
@@ -459,6 +465,17 @@
         return headers;
     }
 
+    // ep.tokenSet is persisted with the rest of DATA in localStorage; the real token lives only
+    // in sessionStorage and does not survive a tab/window close. A prior tab can leave tokenSet
+    // true with nothing actually behind it — this detects that mismatch so callers can fail once,
+    // clearly, instead of letting every request downstream 403 with no explanation.
+    function endpointTokenMissing() {
+        var ep = (DATA.governance && DATA.governance.endpoint) || {};
+        if (!ep.tokenSet) return false;
+        var stored = ''; try { stored = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        return !stored;
+    }
+
     function updateRuntimeManagedRequirement(id, result, generatedAt) {
         var req = (DATA.governance.requirements || []).find(function (r) { return r.id === id; });
         if (!req) return;
@@ -474,6 +491,11 @@
         opts = opts || {};
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
         if (!ep.url) return Promise.resolve({ ok:false, error:'NO_ENDPOINT' });
+        if (endpointTokenMissing()) {
+            ep.tokenSet = false; saveData(); renderGovernancePage();
+            if (!opts.silent) showToast('error', '❌ Runtime token missing — it does not survive a tab close. Reconfigure the endpoint.');
+            return Promise.resolve({ ok:false, error:'TOKEN_MISSING' });
+        }
         var base = ep.url.replace(/\/+$/, '');
         // Controlled negative authorization probe: the CARC operator token intentionally lacks
         // tokens:admin. A 403 is retained by the runtime as real least-privilege denial evidence.
@@ -570,6 +592,11 @@
         var rc = DATA.runtimeCanary = DATA.runtimeCanary || {};
         var ep = (DATA.governance && DATA.governance.endpoint) || {};
         if (!ep.url || ep.lastTestResult !== 'OK') { showToast('error','❌ Connect and test the external runtime before starting the individual batch'); return Promise.resolve({ok:false,error:'ENDPOINT_NOT_CONNECTED'}); }
+        if (endpointTokenMissing()) {
+            ep.tokenSet = false; saveData(); renderGovernancePage();
+            showToast('error','❌ Runtime token missing — it does not survive a tab close. Reconfigure the endpoint before running the batch.');
+            return Promise.resolve({ok:false,error:'TOKEN_MISSING'});
+        }
         if (rc.batchVerification && rc.batchVerification.status === 'RUNNING') { showToast('warning','A roster-wide verification batch is already running'); return Promise.resolve({ok:false,error:'BATCH_ALREADY_RUNNING'}); }
         var plan = buildIndividualVerificationPlan(DATA.participants,evaluateCanaryAuthorization);
         var targets = plan.targets;
