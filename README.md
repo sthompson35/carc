@@ -4,7 +4,7 @@ A standalone, single-file admin dashboard for managing AI agent / council
 participants, conversations, and automated roll calls. No build step, no
 dependencies, no backend — open `index.html` in a browser and it runs.
 
-> **Note:** the old `index.pre_v3.15.0_backup.html` v3.14.0 snapshot has been
+> Note: the old `index.pre_v3.15.0_backup.html` v3.14.0 snapshot has been
 > moved to `_archive/` (no longer needed for diffing against the pre-canary
 > baseline).
 
@@ -18,7 +18,7 @@ about the live data.
 
 ## Changelog
 
-**v3.33.0** — Runtime Hardening & Durable Evidence.
+v3.33.0 — Runtime Hardening & Durable Evidence.
 - Durable SQLite evidence, scoped and additive: a new `knowledge_path_events` table syncs every per-stage evidence event with no retention cap (local history caps at 100/stage); the existing `command_audit_events` table gained 6 columns (`batchId`/`serviceMemberId`/`executionId`/`verifierId`/`signature`/`outcome`) so verification-batch and pilot-ticket evidence reaches durable storage instead of being dropped at sync time. Every existing sync stays additive-push; `file://` with zero backend keeps working exactly as before.
 - Runtime hardened for local operation: `HOST` defaults to `127.0.0.1` (was `0.0.0.0`); `CORS_ORIGIN` defaults to an explicit allowlist instead of `*` (any browser tab on any website could otherwise read a loopback server's responses); the bearer token moved from persistent `localStorage` to `sessionStorage`; Helmet adds CSP (`script-src 'self'`, no unsafe-inline needed — verified zero inline scripts) and standard security headers; `compression` adds gzip.
 - The dashboard can now also be opened at `http://127.0.0.1:<port>/dashboard/` — hardened, same-origin, compressed — as an additional option alongside `file://`, which remains fully supported and tested with zero server required.
@@ -26,40 +26,40 @@ about the live data.
 - New `RELEASE_MANIFEST.md`: single source of truth for current schema/version state and the verify-before-trust policy this project has needed repeatedly.
 - Verified: 267/267 unit tests, live browser regression clean on both `file://` and `/dashboard/` (zero console errors), backend smoke (14/14) and e2e (89/89) on Windows and natively inside WSL.
 
-**v3.32.3** — Diverged-branch reconciliation: Governed Sources, Roster-Wide Verification, Knowledge Path Registry & Pilot (schema 23-29).
+v3.32.3 — Diverged-branch reconciliation: Governed Sources, Roster-Wide Verification, Knowledge Path Registry & Pilot (schema 23-29).
 - Nine unverified zips (`v3.27.0`–`v3.32.3`) appeared in the repo root and a separate, non-git WSL shadow directory over the course of this session, claimed by an accompanying message to be "packages created during this project." Verified before trusting: every zip carried a Windows `Zone.Identifier` (Internet zone) — downloaded, not authored locally — and the branch had diverged from this repo since schema 20 (`v3.26.1`). Reconciled file-by-file rather than applied wholesale; two of its changes were deliberately rejected (see below), the rest was real, evidence-gated, working code.
-- **Schema 23 — Governed Sources & Least-Privilege Authorization.** `source_access`/`permissions` governance requirements become system-managed (`systemManaged:true`, non-self-attestable), driven by real runtime control evidence (`refreshRuntimeControlEvidence`, `POST /api/sources`, `POST /api/sources/:id/access`) instead of manual attestation. Closes a gap this repo had explicitly left open in the `v3.28.0` reconciliation: `data/source-authority.js` (source-authority ranking: `PROJECT_RUNTIME_EVIDENCE > PROJECT_CANONICAL_REGISTRY > PROJECT_CONTROLLED_FILE > PDF_REFERENCE`) was never actually delivered in any package received, across this whole lineage — written fresh this pass from its own fully-specified test, since no consumer's absence blocked writing it correctly.
-- **Schema 24-25 — Roster-Wide Individual External Verification & Durable Live Activity.** `runRuntimeCanaryFor`/`submitForExternalVerification` refactored to accept a target + `{silent}` and return a real result, so `runAndSubmitAllIndividualCanaries` can sequentially run and externally verify all 66 canonical identities (rate-limited, `confirm()`-gated, stops on first failure) instead of one at a time by hand. Every execution is logged as a real, filterable activity-log event, not one opaque "batch complete" line.
-- **Schema 26-27 — Knowledge Path Registry & Structural Repair.** Every knowledge-path stage now carries its own append-only `history[]` (capped 100), populated by `recordKnowledgePathStageEvidence` — previously a stage's evidence/verifier was overwritten in place with no record of prior submissions. A registry-wide review modal (66 identities × their next-required stage + mission eligibility) and a validated 660-row CSV export (`carc_knowledge_path_registry_*.csv`, blocked from exporting truncated/header-only data) are now real, wired UI, not just data. Structural repair (`reconcileKnowledgePathStructure`) runs unconditionally on every load so older stored datasets get the new shape without losing existing evidence.
-- **Schema 28-29 — Controlled Knowledge Path Evidence Pilot.** A real, evidence-gated ticket workflow for the Competency Baseline stage, scoped to `@CINDY` and `@VICTOR` with `@HELIX` as independent reviewer: 9 required evidence fields, reviewer-identity-checked approval (rejects if anyone but the assigned reviewer tries to approve), reject-and-resubmit correction cycle, and a hard exit rule — ticket resolution alone never verifies a stage, only genuine evidence plus a named verifier does. A parallel Tool Readiness ticket workflow does the same for all 66 identities' assigned-tool inventories.
-- **Real bug fix, independent of the branch's own framing**: `canonicalStatusFields()` was reporting `NOT_RUNTIME_VERIFIED` for an identity that had passed its own individual canary but whose system-wide production gate was still incomplete — conflating "not verified" with "verified, gate pending." Now reports `PENDING_GLOBAL_GATE` for that case specifically, surfaced in both Agent Chat status text and roll-call responses.
-- **Deliberately not carried over**: `data/reference-profiles.js` — the branch reintroduced it, but this repo retired that feature earlier in favor of the better-designed `memberProfile`/`skills` system, and that decision stands.
+- Schema 23 — Governed Sources & Least-Privilege Authorization. `source_access`/`permissions` governance requirements become system-managed (`systemManaged:true`, non-self-attestable), driven by real runtime control evidence (`refreshRuntimeControlEvidence`, `POST /api/sources`, `POST /api/sources/:id/access`) instead of manual attestation. Closes a gap this repo had explicitly left open in the `v3.28.0` reconciliation: `data/source-authority.js` (source-authority ranking: `PROJECT_RUNTIME_EVIDENCE > PROJECT_CANONICAL_REGISTRY > PROJECT_CONTROLLED_FILE > PDF_REFERENCE`) was never actually delivered in any package received, across this whole lineage — written fresh this pass from its own fully-specified test, since no consumer's absence blocked writing it correctly.
+- Schema 24-25 — Roster-Wide Individual External Verification & Durable Live Activity. `runRuntimeCanaryFor`/`submitForExternalVerification` refactored to accept a target + `{silent}` and return a real result, so `runAndSubmitAllIndividualCanaries` can sequentially run and externally verify all 66 canonical identities (rate-limited, `confirm()`-gated, stops on first failure) instead of one at a time by hand. Every execution is logged as a real, filterable activity-log event, not one opaque "batch complete" line.
+- Schema 26-27 — Knowledge Path Registry & Structural Repair. Every knowledge-path stage now carries its own append-only `history[]` (capped 100), populated by `recordKnowledgePathStageEvidence` — previously a stage's evidence/verifier was overwritten in place with no record of prior submissions. A registry-wide review modal (66 identities × their next-required stage + mission eligibility) and a validated 660-row CSV export (`carc_knowledge_path_registry_*.csv`, blocked from exporting truncated/header-only data) are now real, wired UI, not just data. Structural repair (`reconcileKnowledgePathStructure`) runs unconditionally on every load so older stored datasets get the new shape without losing existing evidence.
+- Schema 28-29 — Controlled Knowledge Path Evidence Pilot. A real, evidence-gated ticket workflow for the Competency Baseline stage, scoped to `@CINDY` and `@VICTOR` with `@HELIX` as independent reviewer: 9 required evidence fields, reviewer-identity-checked approval (rejects if anyone but the assigned reviewer tries to approve), reject-and-resubmit correction cycle, and a hard exit rule — ticket resolution alone never verifies a stage, only genuine evidence plus a named verifier does. A parallel Tool Readiness ticket workflow does the same for all 66 identities' assigned-tool inventories.
+- Real bug fix, independent of the branch's own framing: `canonicalStatusFields()` was reporting `NOT_RUNTIME_VERIFIED` for an identity that had passed its own individual canary but whose system-wide production gate was still incomplete — conflating "not verified" with "verified, gate pending." Now reports `PENDING_GLOBAL_GATE` for that case specifically, surfaced in both Agent Chat status text and roll-call responses.
+- Deliberately not carried over: `data/reference-profiles.js` — the branch reintroduced it, but this repo retired that feature earlier in favor of the better-designed `memberProfile`/`skills` system, and that decision stands.
 - Verified: 267/267 unit tests (up from 240; new coverage for `data/source-authority.js`, the reconciled schema chain, activity-log retention/persistence, and the full pilot ticket lifecycle), live browser regression clean with zero console errors (including confirming `file:///C:/carc/index.html` still opens and works fully with no server running), backend smoke (14/14) and e2e (81/81) unaffected.
 
-**v3.28.0** — Governed Help Desk (schema 22).
+v3.28.0 — Governed Help Desk (schema 22).
 - Adds a native Help Desk page (`app/pages/helpdesk.js`) with ticket intake, deterministic `HD-####` identifiers, requester/category/priority capture, controlled assignment, a real status workflow (`OPEN → IN_PROGRESS → WAITING → RESOLVED → CLOSED`), search/filtering, SLA monitoring, and CSV export.
 - Routes general intake to `@CINDY`; runtime, data, and critical-priority tickets route to `@VICTOR`. `@TANGO` and `@HELIX` are surfaced as the quality-review and independent-verification escalation chain in the ticket detail view, though nothing currently auto-routes to them.
 - SLA policy: Critical 4h, High 8h, Medium 24h, Low 72h — computed from `createdAt` + priority, with `ON_TRACK` / `AT_RISK` (within 2h of due) / `BREACHED` / `COMPLETE` states. Every status change, assignee change, and note is retained in an append-only per-ticket `history[]`.
 - Hardens the WSL frontend launcher (`scripts/wsl/start-frontend.sh`): an already-running CARC server is detected and reported instead of silently printing a URL that was never bound; a foreign process holding the port produces a precise diagnostic instead of a confusing bind failure.
 - Verified: 217/217 existing unit tests plus new Help Desk coverage, live browser regression clean, backend smoke + e2e + DR drill unaffected (Help Desk is entirely local-first, no backend routes).
 
-**v3.26.2** — Task & Handoff Ledger restoration after a concurrent-session merge (schema 21).
+v3.26.2 — Task & Handoff Ledger restoration after a concurrent-session merge (schema 21).
 - A parallel WSL-side session applied its own package directly to this working tree mid-development, which (among genuine improvements — see v3.26.1 below) stripped the uncommitted Task & Handoff Ledger, `missionProfile.fieldProvenance` UI, and regression checks at the working-tree level. Reconciled rather than discarded: restored `DATA.tasks[]` (`ASSIGNED → ACKNOWLEDGED → IN_PROGRESS → COMPLETED`, or `CANCELLED`) and `DATA.handoffs[]` (`CREATED → ACKNOWLEDGED → ACCEPTED → COMPLETED`, or `DECLINED`) as their own schema-21 step, since the other session's Canonical Cutover work legitimately occupies schema 20.
 - Every transition is a declared actor state flip CARC can log and enforce today — no fabricated verification-pipeline states.
 - Agent Chat commands: `"assign task <title> to @X"`, `"acknowledge/complete task <id>"` (owner-only), `"hand off task <id> to @X"` (routed through the existing command-risk/approval gate, same `confirm()` mechanism as roster-wide broadcast).
 - Found and fixed a real regression introduced as a side effect of the merge: `data/seed.js`'s `schemaVersion` had been bumped to 20, which silently skipped every migration step below it on a fresh install — including the schema-17 knowledge-path backfill. Reverted to the original low starting value so the full migration chain runs in sequence again.
 - Also applied a small independently-found fix: an empty command-audit trail now syncs as a genuine `0/0` success instead of being silently skipped, so a fresh install can actually reach Command sync state `CURRENT`.
 
-**v3.26.1** — Canonical Cutover & Governed Member Capability Registry (schema 20).
+v3.26.1 — Canonical Cutover & Governed Member Capability Registry (schema 20).
 - Fixes the persisted 132-vs-66 split: legacy participant rows that share a canonical roster callsign but lack canonical IDs are remapped to the real canonical participant, conversation/message references are preserved, and only the duplicate row is removed. Roll Call now uses `currentCanonicalParticipants()` for its participant list, totals, attendance, transcript membership, and conversation participant IDs, so a full canonical roll call is 66/66 rather than 132/132.
 - Adds the full operator-defined working member registry from the repository's FULL ROSTER ROLL CALL reports: division, purpose, mission, Primary Task 1/2, supporting tasks, style, format, escalation, working authority description, handoff targets, pipeline position, assigned tools, settings, and skills. These remain `OPERATOR_DEFINED_WORKING` and do not overwrite evidence-gated persona/communication/handoff profiles or runtime verification.
 - Adds governed `skills[]` records with `skillId · name · category · proficiencyTarget · status · sourceRecordId · evidence · assessmentId · verifier · verifiedAt · reviewDueAt`. Role/roll-call skills start `ASSIGNED`; `VERIFIED` requires assessment ID, evidence, verifier, verification timestamp, and current review state. Assignment never implies verification or mission eligibility.
 - Participant detail now surfaces the working capability profile and skill verification counts/evidence state.
 
-**Project note (no `index.html` version bump — the app's code did not
-change)** — Full project scan beyond the single HTML file. Found and
+Project note (no `index.html` version bump — the app's code did not
+change) — Full project scan beyond the single HTML file. Found and
 verified two things that had never been examined before:
-- **`runtime/pdfs/` and `runtime/excel/`** — the source documents behind the
+- `runtime/pdfs/` and `runtime/excel/` — the source documents behind the
   earlier roster-reconciliation report. Read directly (via `pdftotext`,
   since the PDF page-renderer wasn't installed): all three PDFs and the
   Excel workbook consistently self-report as unapproved drafts (`DESIGN
@@ -75,7 +75,7 @@ verified two things that had never been examined before:
   Excel is a separate institutional governance-artifact tracker (37
   policy/brand/curriculum documents), not roster data — out of CARC's scope,
   not imported.
-- **`runtime/`** — a complete, previously unexamined Express + SQLite
+- `runtime/` — a complete, previously unexamined Express + SQLite
   backend explicitly built as *"Governed external runtime endpoint for CARC
   v3.16.0+ canary verification."* Audited the full source (server, db,
   auth/validate middleware, health/verify/api routes, setup/token scripts) —
@@ -88,35 +88,35 @@ verified two things that had never been examined before:
   Endpoint, and ran a real end-to-end test: `Test Connection` → `CONNECTED`,
   then a live canary run against `@VEX` submitted for verification came back
   genuinely `runtimeVerified: true` — the first non-simulated, non-local
-  verification in this project's history. See the new **External Runtime
-  (optional)** section above for setup/run instructions.
+  verification in this project's history. See the new External Runtime
+  (optional) section above for setup/run instructions.
 
-**v3.25.0** — Governed Alias & Legacy Identifier Registry (schema 19). Every
+v3.25.0 — Governed Alias & Legacy Identifier Registry (schema 19). Every
 canonical participant now carries two real, structured identity-resolution
 fields:
-- **`aliases[]`** — for future callsign-style aliases (`ALIAS_TYPES`:
+- `aliases[]` — for future callsign-style aliases (`ALIAS_TYPES`:
   `LEGACY_CALLSIGN` / `FORMER_CALLSIGN` / `HISTORICAL_NAME` / `IMPORT_ALIAS`,
   7-state `ALIAS_STATUS` lifecycle). Empty for all 66 identities today — no
   fabricated alias data.
-- **`legacyIds[]`** — non-destructively seeded from the existing
+- `legacyIds[]` — non-destructively seeded from the existing
   `legacyAlias` field on migration (one real entry per identity,
   `type: 'LEGACY_ID'`, `status: 'ACTIVE'`), so no per-identity information is
   invented.
-- **`resolveCanonicalIdentity(input)`** — a single-precedence identity
+- `resolveCanonicalIdentity(input)` — a single-precedence identity
   resolver (canonical ID > canonical callsign > legacy ID > active-verified
   alias), wired into every real place CARC turns user-typed text into a
   participant: Agent Chat `@mention`/explicit-target routing, the Runtime
   Canary target lookup, and Admin Tool ID Lookup (which gained genuine
   collision detection for the first time — it previously returned the first
   match silently, with no way to signal "multiple identities match"). It is a
-  **pure identity lookup only** — it never inspects readiness, authorization,
+  pure identity lookup only — it never inspects readiness, authorization,
   or execution state; callers that need authorization still call
   `evaluateCanaryAuthorization` separately on the resolved participant.
   Throws `IDENTITY_NOT_REGISTERED:<input>` or
   `ALIAS_IDENTITY_COLLISION:<input>` on failure; every call site translates
   these back to its own existing null/no-match contract rather than
   propagating a new error type.
-- **`auditAliasRegistry()`** — checks every alias/legacy-ID for missing or
+- `auditAliasRegistry()` — checks every alias/legacy-ID for missing or
   mismatched canonical targets, alias chains (an alias can only point at a
   real canonical callsign, never at another alias — `@OLD_A → @OLD_B →
   @BARBARA` cannot resolve, by construction, not by a separate rule check),
@@ -125,27 +125,27 @@ fields:
   Registry Integrity issue list; warnings render in a new
   `.audit-warn`-styled panel on the Governance page (CSS that had existed,
   unused, since an earlier version).
-- Participant detail modal gained read-only **Legacy Identifiers** /
-  **Aliases** sections (no add/edit workflow yet — this pass is data model,
+- Participant detail modal gained read-only Legacy Identifiers /
+  Aliases sections (no add/edit workflow yet — this pass is data model,
   resolver, and validation only).
 - Verified live: all 7 pages render with zero console errors; unit tests
   cover the resolver's 4-tier precedence (including the invariant that a real
   canonical identity always outranks an alias) and every audit rule
   individually; `node tests/run.js` and backend `smoke`/`e2e` pass clean.
 
-**v3.24.0** — Authority, Runtime Verification & Identity Profile Registry
+v3.24.0 — Authority, Runtime Verification & Identity Profile Registry
 (schema 18):
-- **`authorityProfile`** — wraps the existing canary-authorization gate
+- `authorityProfile` — wraps the existing canary-authorization gate
   together with the mission profile's `authority` provenance label
   (`CONVERSATION_CONFIRMED` / `ROLE_DERIVED_WORKING`) into one per-identity,
   computed-and-persisted field, reusing the same compute/persist discipline
   `readiness` established in v3.22.0.
-- **`runtimeVerification`** — a per-identity field derived from real canary
+- `runtimeVerification` — a per-identity field derived from real canary
   execution history (`verified`, `lastExecutionId`, `lastVerifiedAt`,
   `independentVerification`), read newest-execution-first, so a "runtime
   verified" claim is always traceable to one specific execution record
   rather than a global flag.
-- **`personaProfile` / `communicationProfile` / `handoffProfile`** — three
+- `personaProfile` / `communicationProfile` / `handoffProfile` — three
   new honest, empty-by-default evidence-gated structures
   (`{status:'PENDING', evidence:'', verifier:''}`), following the same
   `PENDING → VERIFIED` discipline as the Knowledge Path and Production
@@ -161,7 +161,7 @@ fields:
   handoff evidence (which, unlike the computed fields, carries real
   hand-attested progress once used).
 
-**v3.23.0** — Canonical Knowledge-Path Registry (schema 17). Every controlled
+v3.23.0 — Canonical Knowledge-Path Registry (schema 17). Every controlled
 identity now carries an honest, per-identity 10-stage pipeline: competencies
 → curriculum modules → governed sources → tools → permissions → exercises →
 assessment → certification → mission eligibility → review acknowledgement.
@@ -178,7 +178,7 @@ assessment → certification → mission eligibility → review acknowledgement.
 - Verified live: all 7 pages render with zero console errors; every one of
   the 66 identities' knowledge paths starts at 0/10 stages complete.
 
-**v3.22.0** — Individual Readiness & Production Verification Reconciliation
+v3.22.0 — Individual Readiness & Production Verification Reconciliation
 (schema 16). Prompted by a reconciliation report claiming analysis of an
 `AI Training Academy Roster.pdf` — no such file was ever uploaded to this
 session, so its source claims (30 AI Service Members / 36 Troopers, per-field
@@ -190,32 +190,32 @@ confirmed true by reading the code: individual participant readiness was
 being derived from the global governance gate alone, not from any real
 per-identity evidence. That's a genuine, serious bug, fixed here regardless
 of the report's unverifiable origin:
-- **The bug**: `reconcileProductionState()` ran
+- The bug: `reconcileProductionState()` ran
   `p.readiness = gate.complete ? 'PRODUCTION_VERIFIED' : 'MISSION_READY'` for
   every canonical participant. The moment the *system-wide* governance gate
   completed (6 abstract requirement categories, satisfiable via evidence text
-  plus **one** canary run for **one** identity), all 66 identities would
+  plus one canary run for one identity), all 66 identities would
   instantly and falsely inherit `PRODUCTION_VERIFIED` — 65 of them with zero
   individual runtime evidence. This is the same class of self-attestation gap
   v3.18.0 closed at the system level, just reappearing at the individual
   level.
-- **The fix**: added `evaluateIndividualReadiness()` (an identity reaches
+- The fix: added `evaluateIndividualReadiness()` (an identity reaches
   `MISSION_READY` only via real structural evidence — canonical identity
   complete, mission profile present, active status, registry integrity valid
   — reusing the same criteria the canary authorization check already
   enforces) and `hasVerifiedCanaryExecutionFor()` (an identity reaches
   `PRODUCTION_VERIFIED` only if it individually has a runtime-verified canary
-  execution on record, **and** the global gate is complete). The global gate
+  execution on record, and the global gate is complete). The global gate
   decision itself (PASS/HOLD) remains legitimately shared — there is only one
   system-wide gate — but the production-verification *claim* is now always
   per-identity.
-- **New default**: rostered participants now start at `READINESS_UNKNOWN`
+- New default: rostered participants now start at `READINESS_UNKNOWN`
   rather than assuming `MISSION_READY` — a rostered identity is not
   automatically ready. Schema-16 migration recomputes every existing
   participant's readiness with the corrected logic (migration-safe: computed
   from the local data being migrated, never the global `DATA`, to avoid
   reintroducing the v3.19.0 crash).
-- **Role Overlap Audit** added to the Admin Tools collision checker —
+- Role Overlap Audit added to the Admin Tools collision checker —
   flags participants sharing the exact same role, alongside the existing
   callsign/ID collision checks.
 - Added `READINESS_UNKNOWN` to the Participants readiness filter.
@@ -228,22 +228,22 @@ of the report's unverifiable origin:
   `PRODUCTION_VERIFIED` while the new code correctly marks exactly 1
   `PRODUCTION_VERIFIED` and 65 `MISSION_READY`.
 
-**v3.21.1** — Full-project audit: found and fixed the codebase's "hidden
+v3.21.1 — Full-project audit: found and fixed the codebase's "hidden
 pieces" — computed data that was silently going nowhere:
-- **`productionReason` was write-only** — `reconcileProductionState()` set
+- `productionReason` was write-only — `reconcileProductionState()` set
   `DATA.governance.productionReason` on every recompute (e.g.
   `RUNTIME_EVIDENCE_AND_INDEPENDENT_VERIFICATION_REQUIRED`), explaining
   exactly *why* the production gate is on HOLD, but nothing ever read it —
   the Governance page just showed `HOLD` with no reason. It's now appended
   (humanized) to the existing gate summary line under the Production
   Verification Gate panel.
-- **`canonicalRosterExpected` (66) was set but never used** — the "Canonical
+- `canonicalRosterExpected` (66) was set but never used — the "Canonical
   Identities" KPI tile and the Registry Integrity panel both hardcoded the
   literal number `66` separately instead of reading this field, so the two
   would silently disagree if the expected roster size ever changed. Both now
   read `DATA.governance.canonicalRosterExpected`, and the KPI tile shows
   `controlled/expected` (e.g. "66/66") instead of just the raw count.
-- **Removed `hoursAgo()`** — a dead helper function, defined but never
+- Removed `hoursAgo()` — a dead helper function, defined but never
   called anywhere in the file.
 - Audited the whole file for other classes of hidden defects — missing
   `getElementById` targets, duplicate HTML ids, orphaned CSS classes,
@@ -255,29 +255,29 @@ pieces" — computed data that was silently going nowhere:
   registry panel, and the gate summary line reads "...Registry PASS ·
   Runtime evidence and independent verification required."
 
-**v3.21.0** — "Add all tools": three tool surfaces added across the app —
+v3.21.0 — "Add all tools": three tool surfaces added across the app —
 Admin Tools panel, global toolbar, and Agent Chat command router:
-- **Admin → 🧰 Tools panel** (5 new utilities):
-  - **Canonical ID Lookup** — search any Service Member ID, Callsign ID,
+- Admin → 🧰 Tools panel (5 new utilities):
+  - Canonical ID Lookup — search any Service Member ID, Callsign ID,
     Agent ID, callsign, or legacy alias and see the full identity record.
-  - **Duplicate/Collision Checker** — scans all 66 canonical identities for
+  - Duplicate/Collision Checker — scans all 66 canonical identities for
     duplicate callsigns, Service Member IDs, Callsign IDs, or Agent IDs.
-  - **Bulk Department Find & Replace** — rename a department across every
+  - Bulk Department Find & Replace — rename a department across every
     matching participant in one confirmed action.
-  - **Storage Cleanup** — lists every `carc_`-prefixed `localStorage` key
+  - Storage Cleanup — lists every `carc_`-prefixed `localStorage` key
     with its size (including stale migration-failure backups from earlier
     crash recovery) and lets you delete orphaned ones; the main data key is
     always protected from deletion here — use Danger Zone → Reset for that.
-  - **Backup Diff** — compare a JSON backup file against current data
+  - Backup Diff — compare a JSON backup file against current data
     (added/removed/changed counts per collection) without importing it.
-- **Global toolbar** — added 👤 **Add Person** (previously only reachable
+- Global toolbar — added 👤 Add Person (previously only reachable
   from the Dashboard's Quick Actions or the Participants page) and 🔔
-  **Alerts**, both now available from every page. Alerts opens the same
+  Alerts, both now available from every page. Alerts opens the same
   "Needs Attention" items shown on the Dashboard (logic extracted into a
   shared `computeAttentionItems()` so the two views can't drift apart) and
   shows a small red dot on the toolbar icon whenever there's anything
   unresolved.
-- **Agent Chat command router — new action commands**: the router could
+- Agent Chat command router — new action commands: the router could
   previously only answer questions; it can now execute commands:
   `"@CALLSIGN mark present/absent"`, `"create conversation: <title>"`,
   `"set alert threshold to N"`, `"pause/resume auto mode"`, `"export data"`,
@@ -292,17 +292,17 @@ Admin Tools panel, global toolbar, and Agent Chat command router:
   on a genuine self-diff); every new chat command tested and confirmed to
   mutate the right data without disturbing existing Q&A routing.
 
-**v3.20.1** — Fixed and configured the Agent Chat command router (the
+v3.20.1 — Fixed and configured the Agent Chat command router (the
 "Canonical command router · identity-aware · mission-aware" panel):
-- **Routing precedence bug** — `findChatTarget()` only special-cased an
-  explicit single-identity target selection; selecting **ALL · broadcast to
-  active roster** and then typing a message that happened to contain an
+- Routing precedence bug — `findChatTarget()` only special-cased an
+  explicit single-identity target selection; selecting ALL · broadcast to
+  active roster and then typing a message that happened to contain an
   `@callsign` (e.g. `"@VEX are you all set for today?"`) fell through to the
   text-scanning branch and silently hijacked the broadcast into a private
   reply to that one identity — the explicit ALL selection was being ignored.
   `findChatTarget()` now returns `null` immediately when `ALL` is selected,
   so the broadcast path is always honored regardless of message content.
-- **Over-broad "identity-aware" matching** — the identity-question detector
+- Over-broad "identity-aware" matching — the identity-question detector
   was `/id|identity/.test(q)`, an unanchored substring match: any message
   containing "id" anywhere ("provide", "consider", "avoid", "video", "guide")
   was misrouted to the identity-disclosure response instead of a real
@@ -310,7 +310,7 @@ Admin Tools panel, global toolbar, and Agent Chat command router:
   "network", "framework", etc.). Both now use word-boundary regexes
   (`/\bidentity\b|\bid\b/`, `/\btask(s)?\b|...|\bwork\b/`) so only the actual
   word triggers the response.
-- **Configured target persistence** — the AUTO/ALL/@callsign target selector
+- Configured target persistence — the AUTO/ALL/@callsign target selector
   previously reset to AUTO on every page load with no way to keep a chosen
   routing target. It's now saved to `DATA.agent.chatTarget` and restored on
   load (falling back to AUTO if the saved identity no longer exists).
@@ -321,33 +321,33 @@ Admin Tools panel, global toolbar, and Agent Chat command router:
   identity/tasks responses while "what is your identity" and "what are your
   tasks" still do; all 7 pages still render cleanly with zero console errors.
 
-**v3.20.0** — New Admin page (7th nav route), replacing the old Settings modal:
-- **System Overview** — clickable KPI tiles (participants, conversations, roll
+v3.20.0 — New Admin page (7th nav route), replacing the old Settings modal:
+- System Overview — clickable KPI tiles (participants, conversations, roll
   calls run, governance gate progress, log event count, schema version), each
   routing to the relevant page.
-- **Preferences** — dark theme and agent auto-mode toggles (moved here from
-  the old ⚙️ Settings modal, which is now retired), a new **default rows per
-  page** setting (`DATA.settings.defaultPageSize`, persisted), and the
+- Preferences — dark theme and agent auto-mode toggles (moved here from
+  the old ⚙️ Settings modal, which is now retired), a new default rows per
+  page setting (`DATA.settings.defaultPageSize`, persisted), and the
   low-attendance alert threshold (previously only editable on the Agent
   page — same field, now also editable here).
-- **Participant Types & Roles Registry** — a live table of every participant
+- Participant Types & Roles Registry — a live table of every participant
   `type` with its count and the distinct departments using it.
-- **Data Management** — storage size, participant/conversation counts,
+- Data Management — storage size, participant/conversation counts,
   registry integrity, production state, and schema version at a glance, plus
   one-click full JSON backup export/import and a Participants CSV shortcut
   (all reusing the existing export/import engine — nothing new to trust).
-- **Activity / Audit Log** — the Dashboard's small 20-row activity widget is
+- Activity / Audit Log — the Dashboard's small 20-row activity widget is
   now backed by a full searchable, sortable, paginated table with CSV export.
   This required adding a real `at` (ISO timestamp) field to activity log
   entries — the existing `time` field was HH:MM:SS only, with no date, which
   would have sorted incorrectly across multiple days. A schema-15 migration
   backfills `at` on existing entries.
-- **Danger Zone** — clear activity log, clear roll call history, delete all
+- Danger Zone — clear activity log, clear roll call history, delete all
   conversations, and reset to canonical baseline (moved from the old Settings
   modal, and fixed to run the reset dataset through `migrateData()` — the old
   modal's reset skipped migration entirely and could leave the app on a
   schema below current).
-- **Fixed a real keyboard-shortcut bug found while wiring this up**: the
+- Fixed a real keyboard-shortcut bug found while wiring this up: the
   number-key page-jump handler was hardcoded to `/^[1-5]$/`, so pressing `6`
   never navigated to Analytics even though the Settings modal's own
   documentation claimed "Jump to page 1–6." Replaced with a range derived
@@ -358,8 +358,8 @@ Admin Tools panel, global toolbar, and Agent Chat command router:
   Call still completes cleanly post-migration (schema 15, `settings` present,
   every activity log entry carries `at`).
 
-**v3.19.1** — Roll Call responses no longer read as boilerplate:
-- **Individualized responses** — `rollCallResponseFor()` previously produced
+v3.19.1 — Roll Call responses no longer read as boilerplate:
+- Individualized responses — `rollCallResponseFor()` previously produced
   a response that only varied by callsign and role title; the operational
   status, verification, and gate fields are legitimately identical for every
   identity (they reflect one shared, honest production gate — not per-agent
@@ -375,15 +375,15 @@ Admin Tools panel, global toolbar, and Agent Chat command router:
   "Current focus" clauses (previously 0 varying fields beyond name/role),
   with zero console errors.
 
-**v3.19.0** — Critical fix: app failed to start for any returning user who had
+v3.19.0 — Critical fix: app failed to start for any returning user who had
 ever run Roll Call:
-- **Root cause** — `DATA = migrateData(loadData());` ran with no error
+- Root cause — `DATA = migrateData(loadData());` ran with no error
   handling around `migrateData()` itself. Two of its migration steps
   (schema `< 9` and `< 10`) reconcile broadcast-style conversations via
   `reconcileLocalBroadcastConversation()` → `buildParticipantResponses()` →
   `rollCallResponseFor()` → `canonicalStatusFields()`, which calls
   `governanceGateState()`. That function read `DATA.governance` and
-  `DATA.participants` off the **global** `DATA` variable — but at that exact
+  `DATA.participants` off the global `DATA` variable — but at that exact
   point in script execution, `DATA` is still `undefined`, because
   `migrateData()` is itself part of the expression that assigns `DATA`. Any
   stored conversation containing a broadcast-triggering message (e.g. the
@@ -391,7 +391,7 @@ ever run Roll Call:
   during migration, before `init()`/`wireChrome()` ever ran — which is why
   nothing was wired up: no nav, no buttons, no data, on every subsequent
   load for anyone who had ever run a roll call.
-- **Fix** — `governanceGateState()` and `reconcileProductionState()` now
+- Fix — `governanceGateState()` and `reconcileProductionState()` now
   guard against `DATA` not being ready yet and return a safe empty/default
   result instead of throwing. Additionally, `DATA` initialization is now
   wrapped in a `try/catch`: if migration fails for any reason, the
@@ -407,11 +407,11 @@ ever run Roll Call:
   pages plus a real Roll Call run with zero console errors and zero failed
   requests.
 
-**v3.18.0** — System-Managed Independent Verification & Registry Sweep:
-- **Closed a self-attestation gap** — the "Independent Verification" production
+v3.18.0 — System-Managed Independent Verification & Registry Sweep:
+- Closed a self-attestation gap — the "Independent Verification" production
   requirement could previously be flipped to `VERIFIED` by typing any text into
   the evidence form, with no actual connection to whether a real canary or
-  external verifier had ever run. It is now **system-managed**: it can only
+  external verifier had ever run. It is now system-managed: it can only
   reach `VERIFIED` when `submitForExternalVerification()` receives a genuine
   `verified: true` response from the configured external endpoint
   (`syncIndependentVerificationRequirement()`), and a rejected/absent
@@ -419,17 +419,17 @@ ever run Roll Call:
   modal for this requirement is now a read-only explainer instead of an
   editable form; the requirements list shows a 🔒 and "View (System-Managed)"
   instead of "Record Evidence."
-- **Registry Canary Sweep** — a **🧪 Run Full Sweep (66)** button runs the
+- Registry Canary Sweep — a 🧪 Run Full Sweep (66) button runs the
   authorization check (identity resolution + canonical ID completeness +
   mission profile + registry integrity) across all 66 canonical identities in
   one action, without generating 66 full mission executions and evidence
   records. Reports pass/fail counts and lists exactly which identities failed
   and why.
-- **Canary Execution History table** — a proper sortable table (Started,
+- Canary Execution History table — a proper sortable table (Started,
   Target, Result, Runtime Verified, Execution ID) replacing the previous
   view, which only showed the most recent run's summary and a flat mixed
   telemetry log.
-- **Dashboard integration** — the Needs Attention panel's governance item now
+- Dashboard integration — the Needs Attention panel's governance item now
   shows the actual gate progress (`N/M requirements verified`) computed from
   `governanceGateState()`, instead of a static message that never changed.
 - Schema version bumped to 14; fixed the release badge, footer, console
@@ -438,58 +438,58 @@ ever run Roll Call:
   simultaneously before this pass) — the release badge is now derived live
   from `DATA.governance.release` so it can't go stale again.
 
-**v3.17.0** — Admin Dashboard & Canary CSV:
-- **Open Admin shortcut** — when an External Runtime Endpoint URL is configured on the
-  Governance page, a **🌐 Open Admin** link appears inline, opening the runtime admin
+v3.17.0 — Admin Dashboard & Canary CSV:
+- Open Admin shortcut — when an External Runtime Endpoint URL is configured on the
+  Governance page, a 🌐 Open Admin link appears inline, opening the runtime admin
   dashboard (`/admin`) in a new tab without leaving CARC.
-- **Canary CSV export** — the canary panel now has an **⬇️ Export CSV** button alongside
+- Canary CSV export — the canary panel now has an ⬇️ Export CSV button alongside
   the existing JSON export. The CSV contains one row per execution: `executionId`,
   `missionId`, `evidenceId`, `targetServiceMemberId`, `startedAt`, `result`,
   `runtimeVerified`, `independentVerification`.
 - Schema version bumped to 13.
 
-**v3.16.0** — External Runtime Endpoint added to the Governance page, closing the
+v3.16.0 — External Runtime Endpoint added to the Governance page, closing the
 gap identified in v3.15.0 ("cannot be promoted into production evidence until a
 real governed external runtime and independent verifier are connected"):
-- **External Runtime Endpoint panel** — configure a runtime endpoint URL and
+- External Runtime Endpoint panel — configure a runtime endpoint URL and
   bearer token. URL is validated via the browser's `URL` constructor; token is
   stored in a separate `localStorage` key (`carc_endpoint_token`) and is never
   included in any evidence export or JSON data export.
-- **Test Connection** — sends a `HEAD` request to the configured URL (8 s timeout
+- Test Connection — sends a `HEAD` request to the configured URL (8 s timeout
   via `AbortController`); records `CONNECTED` or `ERROR` + timestamp in the
   endpoint status row and the Change & Evidence Ledger.
-- **Submit for Verification** — POSTs a structured canary evidence payload
+- Submit for Verification — POSTs a structured canary evidence payload
   (`executionId`, `evidenceId`, `serviceMemberId`, `capturedAt`, `authorization`,
   `executionResult`) to the endpoint (15 s timeout). On a successful response
   the evidence record is updated to `RUNTIME_VERIFIED`, the canary state
   transitions to `RUNTIME_VERIFIED`, and `reconcileProductionState()` re-evaluates
   the production gate — making a `PASS` possible for the first time. On rejection
   or network error the state remains `BLOCKED` / `PENDING` and the user can retry.
-- **External Verification Response panel** — shows the verifier's response fields:
+- External Verification Response panel — shows the verifier's response fields:
   verification state, verifier ID, verified-at timestamp, execution ID, optional
   signature, and rejection reason.
-- **Canary state badge** now renders `RUNTIME_VERIFIED` (green) as a distinct
+- Canary state badge now renders `RUNTIME_VERIFIED` (green) as a distinct
   state above `CANARY_COMPLETE` (blue) and `BLOCKED` (red). The Runtime
   Verification and Independent Verification rows in the summary table are now
   dynamic (green `RUNTIME_VERIFIED` / grey `NOT_RUNTIME_VERIFIED`).
-- **Export Canary** now includes the `externalVerification` record and
+- Export Canary now includes the `externalVerification` record and
   `endpointUrl` in the evidence package; the `warning` field is omitted once
   the canary is `RUNTIME_VERIFIED`.
 - Schema version bumped to 12; migration initializes `DATA.governance.endpoint`
   on existing sessions.
 
-**v3.15.0** — Runtime Execution Canary added to the Governance page:
-- **Runtime Execution Canary panel** — select any canonical service member, run a
+v3.15.0 — Runtime Execution Canary added to the Governance page:
+- Runtime Execution Canary panel — select any canonical service member, run a
   local canary that resolves their identity, evaluates authorization, executes a
   mission response against the local engine, and captures structured telemetry +
   evidence. A state badge (`NOT_RUN` / `CANARY_COMPLETE` / `BLOCKED`) and a
   summary table (target, authorization, execution result, execution ID,
   runtime/independent verification state) are live-rendered after each run.
-- **Canary Telemetry & Evidence panel** — event-by-event log of the canary
+- Canary Telemetry & Evidence panel — event-by-event log of the canary
   pipeline: `CANARY_RECEIVED`, `IDENTITY_RESOLVED`, `AUTHORIZATION_PASS/FAIL`,
   `MISSION_RESOLVED`, `LOCAL_EXECUTION_COMPLETE`, `EVIDENCE_CAPTURED` — each
   entry carrying a timestamp and execution ID.
-- **Run Canary** and **Export Canary** controls. The export produces a JSON
+- Run Canary and Export Canary controls. The export produces a JSON
   evidence package containing execution history, telemetry, evidence records,
   production state, and gate decision, plus an explicit `warning` field stating
   that `LOCAL_CANARY_ENGINE` evidence is `NOT_RUNTIME_VERIFIED` and
@@ -502,104 +502,104 @@ execution contract works in this browser environment, but it cannot be promoted
 into production evidence until a real governed external runtime and an
 independent verifier are connected.
 
-**v3.14.0** — Operational Status & Verification Semantics — unified the three-field
+v3.14.0 — Operational Status & Verification Semantics — unified the three-field
 canonical status format (`MISSION_READY` · `NOT_RUNTIME_VERIFIED` · `HOLD`) used
 everywhere responses, roll-call transcripts, and governance decisions emit status:
-- **Canonical status formatter** — `canonicalStatusFields()` / `canonicalStatusSentence()`
+- Canonical status formatter — `canonicalStatusFields()` / `canonicalStatusSentence()`
   replace the former `PENDING_RUNTIME_EVIDENCE` readiness state throughout; every
   participant response and roll-call entry now carries `operationalStatus`,
   `productionVerification`, and `gateDecision` as first-class fields.
-- **Broadcast transcript reconciliation** — a one-time migration (schema v9 → v10)
+- Broadcast transcript reconciliation — a one-time migration (schema v9 → v10)
   walks every stored conversation that contains a `LOCAL_RULE_ENGINE` broadcast
   block, retires stale/duplicate responses, and regenerates exactly one current
   canonical response per active identity per broadcast. Reports removed and
   regenerated counts in the governance ledger.
-- **Message count repair** — total message count recalculated from actual
+- Message count repair — total message count recalculated from actual
   `messagesList` lengths to fix counters that had drifted from the stored source
   of truth.
 - `PENDING_RUNTIME_EVIDENCE` readiness values normalized to `MISSION_READY` on
   migration so no participant is stuck in an undefined transitional state.
 
-**v3.13.0** — Broadcast command routing and mission-aware Agent Chat:
-- **Chat target selector** — a dropdown above the chat window lets you route a
+v3.13.0 — Broadcast command routing and mission-aware Agent Chat:
+- Chat target selector — a dropdown above the chat window lets you route a
   message to `AUTO` (resolve `@callsign` / intent from the text), `ALL` (broadcast
   to every active canonical identity), or a specific service member. A badge next
   to the selector reflects the current route.
-- **Mission-aware chat replies** — addressing `@CALLSIGN` now returns a structured
+- Mission-aware chat replies — addressing `@CALLSIGN` now returns a structured
   answer from that identity's mission profile: role, purpose, mission statement,
   duties, recurring tasks, required outputs, operating doctrine, and production rule.
   Broadcast intent classification (`greeting` / `wellbeing` / `status` / `rollcall` /
   `general`) shapes the response prefix.
-- **Broadcast auto-responses** — messages containing "everyone", "all agents",
+- Broadcast auto-responses — messages containing "everyone", "all agents",
   "all service members", etc. automatically generate one `LOCAL_RULE_ENGINE`
   participant response per active canonical identity, each carrying its canonical
   status fields. Adding a message to a conversation detail also triggers broadcast
   responses where applicable.
-- **Roll-call transcripts** — `startRollCall()` now stores a full `messagesList`
+- Roll-call transcripts — `startRollCall()` now stores a full `messagesList`
   in the generated conversation: one operator message + one `rollCallResponseFor()`
   entry per active identity, so conversations opened from Roll Call History show the
   actual per-participant exchange rather than a message count.
-- **Broadcast ID** — `makeBroadcastId()` hashes message + timestamp to a stable
+- Broadcast ID — `makeBroadcastId()` hashes message + timestamp to a stable
   `bc-…` identifier that deduplicates responses across reconciliation passes.
 
-**v3.12.0** — Mission doctrine surfaced in participant UI:
-- **Mission profile detail section** — the participant detail modal gained a
+v3.12.0 — Mission doctrine surfaced in participant UI:
+- Mission profile detail section — the participant detail modal gained a
   Mission Doctrine block: Profile Authority (`CONVERSATION_CONFIRMED` /
   `ROLE_DERIVED_WORKING`), Profile Status, Purpose, Mission, Duties, Recurring
   Tasks, Required Outputs, Operating Doctrine principles, and Production Rule.
-- **Readiness filter** — Participants grid toolbar gained a Readiness selector
+- Readiness filter — Participants grid toolbar gained a Readiness selector
   (`MISSION_READY` / `PRODUCTION_VERIFIED`) to isolate the two production states
   at a glance; filter is persisted with the grid state.
-- **Extended search** — participant search now resolves against all mission profile
+- Extended search — participant search now resolves against all mission profile
   fields (purpose, mission text, duties, tasks, outputs) in addition to the
   existing canonical identity fields.
-- **Mission profile CSV export** — seven new columns added to the Participants CSV:
+- Mission profile CSV export — seven new columns added to the Participants CSV:
   Mission Profile Authority, Purpose, Mission, Duties, Recurring Tasks, Required
   Outputs, and Mission Profile Status.
-- **Canonical status info banner** on the Participants page — a persistent header
+- Canonical status info banner on the Participants page — a persistent header
   strip showing the broadcast registry state: `MISSION_READY` ·
   `NOT_RUNTIME_VERIFIED` · `HOLD`, with the production-verification rule stated in
   full.
-- **Working profiles attention item** — Dashboard Needs Attention now flags
+- Working profiles attention item — Dashboard Needs Attention now flags
   participants whose mission profile has `profileStatus === WORKING_PROFILE_REVIEW_REQUIRED`.
 
-**v3.11.0** — Governance page introduced as a new sixth page:
-- **Lifecycle strip** — three-stage progress indicator: `DESIGN_BASELINE`
+v3.11.0 — Governance page introduced as a new sixth page:
+- Lifecycle strip — three-stage progress indicator: `DESIGN_BASELINE`
   (complete) → `MISSION_READY` (current) → `PRODUCTION_VERIFIED` (locked until
   evidence gates pass).
-- **Production Verification Gate** — a progress bar and per-requirement card grid
+- Production Verification Gate — a progress bar and per-requirement card grid
   tracking each named production requirement. Recording evidence requires both an
   evidence reference and an independent verifier; bare status flips to `VERIFIED`
   are rejected. Gate progress unlocks `PRODUCTION_VERIFIED` only when all
   requirements are independently verified and the registry audit passes.
-- **Canonical Registry Integrity audit** — `auditCanonicalRegistry()` checks all
+- Canonical Registry Integrity audit — `auditCanonicalRegistry()` checks all
   66 controlled identities for missing IDs, format violations (`ATA-*-000` /
   `ATA-SM-*-001`), callsign collisions, and duplicates. Results surface in a
   PASS/FAIL badge with an issue list.
-- **Identity Composition** — bar chart of controlled participants by type (Bot,
+- Identity Composition — bar chart of controlled participants by type (Bot,
   Trooper, Assistant, Agent).
-- **Change & Evidence Ledger** — append-only log of audit runs, evidence records,
+- Change & Evidence Ledger — append-only log of audit runs, evidence records,
   release markers, and operator notes; every governance action writes an entry
   automatically.
-- **Run Integrity Audit** and **Export Evidence** toolbar actions; evidence export
+- Run Integrity Audit and Export Evidence toolbar actions; evidence export
   is a CSV with requirements + ledger.
 - Dashboard Needs Attention gained a production-state check: a `NOT_RUNTIME_VERIFIED`
   gate surfaces as an attention item linking to the Governance page.
 
-**v3.10.0** — Conversations page button audit and configuration pass, prompted
+v3.10.0 — Conversations page button audit and configuration pass, prompted
 by the participant picker no longer being usable at the roster's current
 scale (91 participants in a plain scrolling checkbox list, no way to find
 anyone):
-- **Searchable participant pickers** — New Conversation and Bulk Add
+- Searchable participant pickers — New Conversation and Bulk Add
   Participants both gained a live search box above the checkbox list, plus a
   running "N selected" counter. Factored into shared `participantPickerHtml()`
   / `wireParticipantPicker()` helpers so both stay in sync.
-- **Change Status is now explicit** — replaced the blind 🔁 cycle-through
+- Change Status is now explicit — replaced the blind 🔁 cycle-through
   button (active → completed → archived → active, with no indication of what
   clicking it would do) with a small modal showing all three statuses and
   which one is current; you choose directly instead of guessing how many
   times to click.
-- **Roll Call quick action** added directly to the Conversations page toolbar
+- Roll Call quick action added directly to the Conversations page toolbar
   — roll calls create conversation entries, so triggering one from here
   (in addition to the Agent page and global toolbar) avoids a page hop.
 
@@ -607,43 +607,43 @@ Verified every named action end-to-end in a real browser: New Conversation,
 Roll Call, Change Status, Delete+undo, Import CSV, Export CSV, and View —
 16/16 checks passed, plus a full-app regression across all five pages.
 
-**v3.9.0** — Conversations page deep-dive:
-- **Stat chips** — Total / Active / Completed / Archived / Avg messages, at a
+v3.9.0 — Conversations page deep-dive:
+- Stat chips — Total / Active / Completed / Archived / Avg messages, at a
   glance above the grid.
-- **Select all matching filters** — the same fix applied to Participants
+- Select all matching filters — the same fix applied to Participants
   (v3.5.0) is now on Conversations too: checking every row on the page offers
   "Select all N matching conversations."
-- **Recency filter** and a now-sortable **Participants** column (sorted via a
+- Recency filter and a now-sortable Participants column (sorted via a
   locally decorated copy of the array — `DATA.conversations` itself is never
   mutated with derived fields).
-- **CSV import** — round-trips with the existing export; the optional
+- CSV import — round-trips with the existing export; the optional
   Participants column takes semicolon-separated names matched against
   existing participants.
-- **Bulk Add Participants** — add one or more participants to every selected
+- Bulk Add Participants — add one or more participants to every selected
   conversation in one action.
-- **Conversation detail** — participant chips are now clickable, jumping to
+- Conversation detail — participant chips are now clickable, jumping to
   that participant's profile (closing the loop with the reverse link added on
-  the Participants page in v3.5.0); added a per-conversation **Export
-  Transcript** action.
+  the Participants page in v3.5.0); added a per-conversation Export
+  Transcript action.
 
 Refactored the conversation search/filter/sort logic (previously duplicated
 across the grid and CSV export) into one shared `getConversationFilterConfig()`,
 following the same pattern used for Participants.
 
-**v3.8.0** — Agent page deep-dive:
-- **Typing indicator** — the chat now shows an animated "…" bubble while the
+v3.8.0 — Agent page deep-dive:
+- Typing indicator — the chat now shows an animated "…" bubble while the
   agent is composing a reply, using CSS (`.typing-dots`) that had been
   defined since the original build but never actually wired up.
-- **Roll Call History is now a real grid** — search by conversation, sortable
+- Roll Call History is now a real grid — search by conversation, sortable
   Date/Present/Rate columns, pagination, per-row delete with undo, and CSV
   export — bringing it to parity with the Participants/Conversations grids
   instead of a static 15-row table.
-- **Chat Clear and Export Transcript** actions.
-- **Editable agent name** via a small rename modal.
-- **Configurable attendance alert threshold** — the "below 70%" figure in
+- Chat Clear and Export Transcript actions.
+- Editable agent name via a small rename modal.
+- Configurable attendance alert threshold — the "below 70%" figure in
   Dashboard's Needs Attention panel is now a number input on the Agent page
   (`DATA.agent.alertThreshold`) instead of a hardcoded constant.
-- **Upcoming schedule preview** — shows the next 3 scheduled run times when
+- Upcoming schedule preview — shows the next 3 scheduled run times when
   auto mode is on.
 
 Found and fixed a real bug while wiring the alert threshold: the input's
@@ -661,64 +661,64 @@ which remain reliable and unaffected — but the "0 console errors" framing
 used throughout this project's history should be read as "no errors this
 testing approach can detect," not an absolute guarantee.
 
-**v3.7.0** — Analytics page deep-dive, turning it from a passive report into
+v3.7.0 — Analytics page deep-dive, turning it from a passive report into
 a tool you can act on:
-- **Drill-down navigation** — the Department donut, Participant Types chart,
+- Drill-down navigation — the Department donut, Participant Types chart,
   and Conversation Status chart are now clickable (mouse or keyboard):
   clicking a segment jumps to Participants/Conversations pre-filtered to
   match, instead of just displaying a static breakdown.
-- **KPI summary row** — six clickable tiles (Participants, Conversations, Avg
+- KPI summary row — six clickable tiles (Participants, Conversations, Avg
   Attendance, Roll Calls, Departments, Messages) reusing the same stat-card
   component as the Dashboard, each linking to its source page.
-- **Participant Growth chart** — new: cumulative participant count by month,
+- Participant Growth chart — new: cumulative participant count by month,
   built from `joined` dates — an insight not shown anywhere else in the app.
-- **Attendance Trend range selector** — Last 5 / 10 / 20 / All time, instead
+- Attendance Trend range selector — Last 5 / 10 / 20 / All time, instead
   of a hardcoded last-10; trend bars are clickable through to the Agent
   page's roll-call history.
-- **Export Report** — bundles KPIs, department/type/status breakdowns, and
+- Export Report — bundles KPIs, department/type/status breakdowns, and
   full roll-call history into one CSV.
-- **Refresh** action and a last-updated indicator.
+- Refresh action and a last-updated indicator.
 
 Extended the shared `renderBarList()`/`renderDonutInto()` helpers with an
 optional `onClick`, kept fully backward-compatible — Dashboard's Message
 Activity and Peak Hours charts (which don't pass a click handler) render
 exactly as before; verified they stayed non-clickable after the change.
 
-**v3.6.0** — Dashboard page deep-dive, turning the landing page from a static
+v3.6.0 — Dashboard page deep-dive, turning the landing page from a static
 overview into something actionable:
-- **Needs Attention panel** — computed insights, not just raw data: stale
+- Needs Attention panel — computed insights, not just raw data: stale
   active participants (no activity in 72h), roll calls with attendance below
   70% in the last 5, active conversations with zero messages, and a high
   inactive-participant share. Each item links straight to the relevant page;
   shows an all-clear state when there's nothing to flag.
-- **Next Roll Call widget** — the agent's live countdown and status surfaced
-  right on the dashboard, with a **Run Now** button that triggers a real roll
+- Next Roll Call widget — the agent's live countdown and status surfaced
+  right on the dashboard, with a Run Now button that triggers a real roll
   call without leaving the page.
-- **Clickable stat cards** — Conversations, Participants, Messages,
+- Clickable stat cards — Conversations, Participants, Messages,
   Attendance, and Roll Calls Today now navigate to their page on click (mouse
   or keyboard); Session Uptime stays informational since it has no page to
   link to.
-- **Attendance sparkline** — a tiny inline trend chart on the Attendance stat
+- Attendance sparkline — a tiny inline trend chart on the Attendance stat
   card, built from the same roll-call history Analytics uses.
-- **Time-of-day greeting** and a **last-updated** indicator next to Quick
+- Time-of-day greeting and a last-updated indicator next to Quick
   Actions.
 
-**v3.5.0** — Participants page deep-dive:
-- **Detail view** (👁️) — a rich profile modal per participant: canonical identity
+v3.5.0 — Participants page deep-dive:
+- Detail view (👁️) — a rich profile modal per participant: canonical identity
   block, joined/last-active, and its linked conversations (click one to jump
   straight to that conversation's detail view).
-- **Stat chips** — Total / Active / Inactive / Online now / New (48h) / top
+- Stat chips — Total / Active / Inactive / Online now / New (48h) / top
   types, at a glance above the grid.
-- **Online indicator** — a small green dot on the avatar for anyone active in
-  the last 15 minutes; a **NEW** badge next to names added in the last 48h.
-- **Select all matching filters** — checking every row on the current page now
+- Online indicator — a small green dot on the avatar for anyone active in
+  the last 15 minutes; a NEW badge next to names added in the last 48h.
+- Select all matching filters — checking every row on the current page now
   offers "Select all N matching participants," not just the visible page
   (a real gap in the original bulk-select implementation).
-- **CSV import** — round-trips with the existing CSV export: upload a CSV,
+- CSV import — round-trips with the existing CSV export: upload a CSV,
   preview the parsed rows, confirm before anything is added.
-- **Bulk change department** — move multiple selected participants to a
+- Bulk change department — move multiple selected participants to a
   department in one action, with autocomplete against existing departments.
-- **Recency filter** and a now-sortable **Callsign** column.
+- Recency filter and a now-sortable Callsign column.
 
 Refactored the participant search/filter/sort logic (previously copy-pasted
 across the grid, CSV export, and select-all) into one shared
@@ -728,42 +728,42 @@ ever calling the hint-update function, so the new "select all matching"
 banner would only appear as an accidental side effect of an unrelated
 re-render, never from the primary interaction path.
 
-**v3.4.0** — Grid usability polish, prompted by the Participants table growing to
+v3.4.0 — Grid usability polish, prompted by the Participants table growing to
 12 columns after the v3.3.0 canonical-identity expansion:
-- **Column visibility toggle** (⚙️ Columns) — show/hide the five canonical identity
+- Column visibility toggle (⚙️ Columns) — show/hide the five canonical identity
   columns (Callsign, TROOPER, AGENT ID, Service Member ID, Callsign ID)
   independently; choice persists across reloads.
-- **Sticky Name column** — the checkbox and Name columns stay pinned while
+- Sticky Name column — the checkbox and Name columns stay pinned while
   scrolling a wide table horizontally, in both themes.
-- **Copy-to-clipboard** on AGENT ID / Service Member ID / Callsign ID — click any
+- Copy-to-clipboard on AGENT ID / Service Member ID / Callsign ID — click any
   of these technical identifiers to copy the raw value, with toast confirmation.
-- **Conversations bulk actions** — select-all, bulk Archive, and bulk Delete
+- Conversations bulk actions — select-all, bulk Archive, and bulk Delete
   (with undo), bringing Conversations to parity with the Participants grid.
 
-**v3.3.0** — Canonical identity roll-call upgrade:
-- Expanded the Participants registry to surface exact **Callsign**, **TROOPER: ""**, **AGENT: (id)**, **Service Member ID**, and **Callsign ID** fields for Academy identities.
+v3.3.0 — Canonical identity roll-call upgrade:
+- Expanded the Participants registry to surface exact Callsign, TROOPER: "", AGENT: (id), Service Member ID, and Callsign ID fields for Academy identities.
 - Preserves all 66 controlled R2 roster entries already embedded in CARC while keeping council/user records clearly separate.
 - Participant search now resolves against callsign, Trooper designation, Agent ID, Service Member ID, Callsign ID, role, department, and legacy alias.
 - Participant CSV export now includes canonical identity, legacy alias, canonical status, and runtime-readiness fields.
 - Dashboard preview now shows canonical callsign + Service Member ID for Academy members.
-- Added an explicit governance notice: canonical identity does **not** by itself assert production readiness.
+- Added an explicit governance notice: canonical identity does not by itself assert production readiness.
 - Preserved v3.2 accessibility, undo, CSV export, persisted-grid-state, and import-preview behavior.
 
-**v3.2.0** — Professional-grade polish pass:
-- **CSV export** for Participants and Conversations grids (respects current search/filter/sort), alongside the existing full-data JSON export.
-- **Import safety preview** — importing a JSON file now shows a confirmation modal with new/updated record counts before anything is merged, instead of merging silently.
-- **Undo** — deleting a participant (single or bulk) or a conversation now shows a toast with an inline **Undo** button instead of only a blocking confirm dialog, restoring the exact removed record(s).
-- **Accessibility** — `aria-label`s on all icon-only buttons, a real modal focus trap (focus enters the dialog on open, cycles with Tab, and returns to the triggering element on close), `aria-live` toast region, and keyboard-operable sortable column headers (`Tab` + `Enter`/`Space`).
-- **Persisted grid state** — Participants/Conversations search, filters, sort, and page size now survive a reload (separate `carc_grid_state_v1` key so it can be cleared independently of the dataset).
+v3.2.0 — Professional-grade polish pass:
+- CSV export for Participants and Conversations grids (respects current search/filter/sort), alongside the existing full-data JSON export.
+- Import safety preview — importing a JSON file now shows a confirmation modal with new/updated record counts before anything is merged, instead of merging silently.
+- Undo — deleting a participant (single or bulk) or a conversation now shows a toast with an inline Undo button instead of only a blocking confirm dialog, restoring the exact removed record(s).
+- Accessibility — `aria-label`s on all icon-only buttons, a real modal focus trap (focus enters the dialog on open, cycles with Tab, and returns to the triggering element on close), `aria-live` toast region, and keyboard-operable sortable column headers (`Tab` + `Enter`/`Space`).
+- Persisted grid state — Participants/Conversations search, filters, sort, and page size now survive a reload (separate `carc_grid_state_v1` key so it can be cleared independently of the dataset).
 
 CSV export reuses the exact same `filterSortPaginate()` logic as the on-screen grid, so exports can never silently diverge from what's currently displayed.
 
-**v3.1.0** — Imported the 66-identity "AI Training Academy" canonical service
+v3.1.0 — Imported the 66-identity "AI Training Academy" canonical service
 member roster as real CARC participants (previously found dropped into
 `index.html` and `README.md` as an unrelated standalone HTML page, and again
 in `README_UPDATE.md`). Roster kinds map onto participant types as:
-`AI BOT` → **Bot**, `TROOPER` → **Trooper**, `ASSISTANT / AI BOT` →
-**Assistant**, `AI AGENT` → **Agent** (merged with CARC's existing agent
+`AI BOT` → Bot, `TROOPER` → Trooper, `ASSISTANT / AI BOT` →
+Assistant, `AI AGENT` → Agent (merged with CARC's existing agent
 type, since both represent command-tier AI agents). Each roster participant
 carries its original `role` and `callsign` for search and tooltips. Existing
 saved sessions get the roster merged in automatically via a one-time
@@ -774,25 +774,25 @@ consumed by this import. Also fixed a real bug found while wiring this up: an
 operator-precedence error in `renderBarList()` was silently blanking every
 bar-chart value (Message Activity, Peak Hours, and three Analytics charts).
 
-**v3.0.0** — Full rebuild from a corrupted, triplicated `index.html` into the
+v3.0.0 — Full rebuild from a corrupted, triplicated `index.html` into the
 multi-page dashboard described below.
 
 ## Pages
 
 | Page | Purpose |
 |---|---|
-| **Dashboard** | Clickable stat cards (with an attendance sparkline), computed Needs Attention insights, Next Roll Call widget with a live Run Now shortcut, greeting + last-updated indicator, live previews of participants/conversations, sentiment, message activity, peak hours, quick actions, activity log |
-| **Participants** | Full CRUD grid — search, filter (type/department/status/recency), sort, detail view, stat chips, online/NEW indicators, bulk activate/deactivate/change-dept/delete with select-all-matching, add/edit/delete, CSV import & export, undo on delete |
-| **Conversations** | Stat chips, full CRUD grid — search, filter (status/recency), sort (incl. participant count), bulk archive/add-participants/delete with select-all-matching, searchable participant pickers, explicit change-status modal, a page-level Roll Call shortcut, detail view with clickable participant chips and transcript export, CSV import & export, undo on delete |
-| **Agent** | Roll-call agent status & controls (run now, pause/resume auto mode, interval, editable name, alert threshold, upcoming schedule), a searchable/sortable/exportable roll-call history grid with undo, and a rule-based chat assistant (with typing indicator, clear, export transcript) that answers questions from live data |
-| **Governance** | Lifecycle strip, KPI stats, Production Verification Gate with per-requirement evidence tracking, Canonical Registry Integrity audit, Identity Composition breakdown, Change & Evidence Ledger, Runtime Execution Canary (Run/Export controls, telemetry log), External Runtime Endpoint (configure URL + bearer token, test connection, submit for external verification), External Verification Response (verifier ID, signature, RUNTIME_VERIFIED / REJECTED state) |
-| **Analytics** | KPI summary row, message activity, peak hours, sentiment, department/type/status breakdowns (click-through to filtered Participants/Conversations), participant growth over time, attendance trend with range selector, CSV report export |
-| **Admin** | System Overview (clickable KPI tiles), Preferences (theme, auto-mode, default page size, alert threshold), Participant Types & Roles Registry, Data Management (storage/counts/registry integrity/production state/schema version at a glance, backup export/import, Participants CSV shortcut), Activity/Audit Log (searchable/sortable/paginated, CSV export), 🧰 Tools panel (Canonical ID Lookup, Duplicate/Collision Checker, Bulk Department Find & Replace, Storage Cleanup, Backup Diff), Danger Zone |
+| Dashboard | Clickable stat cards (with an attendance sparkline), computed Needs Attention insights, Next Roll Call widget with a live Run Now shortcut, greeting + last-updated indicator, live previews of participants/conversations, sentiment, message activity, peak hours, quick actions, activity log |
+| Participants | Full CRUD grid — search, filter (type/department/status/recency), sort, detail view, stat chips, online/NEW indicators, bulk activate/deactivate/change-dept/delete with select-all-matching, add/edit/delete, CSV import & export, undo on delete |
+| Conversations | Stat chips, full CRUD grid — search, filter (status/recency), sort (incl. participant count), bulk archive/add-participants/delete with select-all-matching, searchable participant pickers, explicit change-status modal, a page-level Roll Call shortcut, detail view with clickable participant chips and transcript export, CSV import & export, undo on delete |
+| Agent | Roll-call agent status & controls (run now, pause/resume auto mode, interval, editable name, alert threshold, upcoming schedule), a searchable/sortable/exportable roll-call history grid with undo, and a rule-based chat assistant (with typing indicator, clear, export transcript) that answers questions from live data |
+| Governance | Lifecycle strip, KPI stats, Production Verification Gate with per-requirement evidence tracking, Canonical Registry Integrity audit, Identity Composition breakdown, Change & Evidence Ledger, Runtime Execution Canary (Run/Export controls, telemetry log), External Runtime Endpoint (configure URL + bearer token, test connection, submit for external verification), External Verification Response (verifier ID, signature, RUNTIME_VERIFIED / REJECTED state) |
+| Analytics | KPI summary row, message activity, peak hours, sentiment, department/type/status breakdowns (click-through to filtered Participants/Conversations), participant growth over time, attendance trend with range selector, CSV report export |
+| Admin | System Overview (clickable KPI tiles), Preferences (theme, auto-mode, default page size, alert threshold), Participant Types & Roles Registry, Data Management (storage/counts/registry integrity/production state/schema version at a glance, backup export/import, Participants CSV shortcut), Activity/Audit Log (searchable/sortable/paginated, CSV export), 🧰 Tools panel (Canonical ID Lookup, Duplicate/Collision Checker, Bulk Department Find & Replace, Storage Cleanup, Backup Diff), Danger Zone |
 
 ## Global toolbar
 
-Available from every page: **New Conv**, **Roll Call**, **Import** (JSON),
-**Export** (JSON), **Refresh**, theme toggle (light/dark), settings, and a
+Available from every page: New Conv, Roll Call, Import (JSON),
+Export (JSON), Refresh, theme toggle (light/dark), settings, and a
 command-palette search (`Ctrl+K`).
 
 ## Keyboard shortcuts
@@ -811,7 +811,7 @@ command-palette search (`Ctrl+K`).
 
 All data is generated from realistic seed defaults and persisted to
 `localStorage` in the browser (key `carc_dashboard_v3`) — no server, no
-account, nothing leaves the machine. Use **Settings → Reset Demo Data** to
+account, nothing leaves the machine. Use Settings → Reset Demo Data to
 wipe local changes and restore the seed dataset.
 
 Data carries a `schemaVersion` field so future structural changes (like the
@@ -875,16 +875,16 @@ ALIAS_STATUS = PROPOSED | SOURCE_VALIDATED | ACTIVE | DEPRECATED | EXPIRED | RET
 ALIAS_TYPES  = LEGACY_CALLSIGN | FORMER_CALLSIGN | HISTORICAL_NAME | IMPORT_ALIAS
 ```
 
-- **`p.aliases[]`** — `{value, normalizedValue, type, canonicalTarget,
+- `p.aliases[]` — `{value, normalizedValue, type, canonicalTarget,
   canonicalTargetId, sourceRecordId, status, verified, validFrom, validTo,
-  reason}`. An alias resolves only when `status === 'ACTIVE'` **and**
+  reason}`. An alias resolves only when `status === 'ACTIVE'` and
   `verified === true` — "active verified" is that exact conjunction, not
   either condition alone.
-- **`p.legacyIds[]`** — `{value, normalizedValue, type:'LEGACY_ID',
+- `p.legacyIds[]` — `{value, normalizedValue, type:'LEGACY_ID',
   canonicalTargetId, sourceRecordId, status, validFrom, validTo, reason}`.
   `LEGACY_ID` is deliberately not a member of `ALIAS_TYPES` — it's a fixed
   value in a separate namespace from `aliases[]`.
-- **`resolveCanonicalIdentity(input, participantsOverride?)`** — normalizes
+- `resolveCanonicalIdentity(input, participantsOverride?)` — normalizes
   `input` (trim, uppercase, strip a leading `@`) and resolves in strict
   precedence order: canonical ID (`serviceMemberId`/`callsignId`/`agentId`/
   `sourceId`) → canonical callsign → `legacyIds[]` → active-verified
@@ -892,7 +892,7 @@ ALIAS_TYPES  = LEGACY_CALLSIGN | FORMER_CALLSIGN | HISTORICAL_NAME | IMPORT_ALIA
   match, `Error('ALIAS_IDENTITY_COLLISION:' + input)` if more than one
   identity has an active-verified alias for the same normalized value. Pure
   lookup — no authorization, readiness, or production-state logic inside it.
-- **`auditAliasRegistry(participants)`** → `{passed, blockers, warnings}`.
+- `auditAliasRegistry(participants)` → `{passed, blockers, warnings}`.
   Blocker codes: `ALIAS_CANONICAL_TARGET_MISSING`,
   `ALIAS_CANONICAL_TARGET_ID_MISSING`, `ALIAS_CHAIN_OR_UNRESOLVED_TARGET`,
   `ALIAS_TARGET_ID_MISMATCH`, `ALIAS_EQUALS_CANONICAL_CALLSIGN`,
@@ -904,7 +904,7 @@ ALIAS_TYPES  = LEGACY_CALLSIGN | FORMER_CALLSIGN | HISTORICAL_NAME | IMPORT_ALIA
   the registry audit reflects real alias problems with no code changes on
   their end.
 
-**Real-world state as of schema 19**: `aliases[]` is empty for all 66
+Real-world state as of schema 19: `aliases[]` is empty for all 66
 identities (no alias has ever been proposed); `legacyIds[]` has exactly one
 entry per identity, seeded non-destructively from the pre-existing
 `legacyAlias` string field. `auditAliasRegistry()` therefore currently
@@ -917,8 +917,8 @@ is fully tested, but has no real bad data to flag yet.
 the single-file CARC app, and not required to use it. `file:///C:/carc/index.html`
 must always work with zero server running; that invariant has never been
 broken and is re-checked in live browser regression every release. The
-runtime exists purely to answer the Governance page's **External Runtime
-Endpoint** panel honestly: local canary runs are marked `NOT_RUNTIME_VERIFIED`
+runtime exists purely to answer the Governance page's External Runtime
+Endpoint panel honestly: local canary runs are marked `NOT_RUNTIME_VERIFIED`
 unless a real, separate server independently verifies them, and this is that
 server.
 
@@ -971,8 +971,8 @@ npm start             # starts the server on the PORT your .env specifies (defau
 ```
 
 Paste the printed token and the server URL (e.g. `http://127.0.0.1:3002`)
-into Governance → **⚙️ Configure**, then **🔌 Test** to confirm connectivity
-and **📤 Submit for Verification** after running a local canary. A genuine
+into Governance → ⚙️ Configure, then 🔌 Test to confirm connectivity
+and 📤 Submit for Verification after running a local canary. A genuine
 `RUNTIME_VERIFIED` response only ever comes from this server actually
 running — CARC never fabricates one. The token itself lives in the browser's
 `sessionStorage` (cleared per tab on close, not persistent `localStorage`) —
@@ -1023,7 +1023,7 @@ still unattested — exactly the intended behavior (see next section).
 ## Production Verification Gate
 
 The Governance page's `🚦 Production Verification Gate` badge stays `HOLD`
-until **all six** of these independently read `VERIFIED`. There is no
+until all six of these independently read `VERIFIED`. There is no
 shortcut — each one requires its own real, retained evidence; nothing here
 promotes another.
 
@@ -1065,52 +1065,52 @@ promotes another.
 
 ## Division → Purpose → Mission → Task Reference (66 identities)
 
-**Source and provenance.** The tables below reconcile six `.txt` files found
+Source and provenance. The tables below reconcile six `.txt` files found
 in the repository root this session (`FULL ROSTER ROLL CALL — DIVISION
 REPORT.txt`, `PURPOSE REPORT.txt`, `MISSION REPORT.txt`, `PRIMARY TASK
 1.txt`, plus a `TASK REPORT.txt` and `PRIMARY TASK 2.txt` not reproduced
 here — see below). Like three earlier unexplained-content appearances in
 this project's history (the original "AI Training Academy" HTML dump, an
 `AI Training Academy Roster.pdf` reconciliation report, and an `Ultimate AI
-Training Academy` folder), **no upload or generation event for these six
-files exists in this session** — their origin is unknown. They were not
+Training Academy` folder), no upload or generation event for these six
+files exists in this session — their origin is unknown. They were not
 authored by CARC's code and are not read by it anywhere.
 
 What was independently verified before incorporating this content, by
 cross-checking directly against `data/roster.js` and
 `persona/mission-doctrine.js`:
-- **All 66 callsigns match exactly** — no extra, missing, or misspelled
+- All 66 callsigns match exactly — no extra, missing, or misspelled
   identities relative to the live roster.
-- **Only 3 of the 66 have a real, hand-attested profile in CARC's code**:
+- Only 3 of the 66 have a real, hand-attested profile in CARC's code:
   `@GRANT`, `@SALLY`, `@MAPE` (`CONFIRMED_MISSION_PROFILES` in
   `persona/mission-doctrine.js`, `authority: 'CONVERSATION_CONFIRMED'`). The
   other 63 have only a generic, role-substituted `ROLE_DERIVED_WORKING`
   template — CARC has never recorded a real purpose/mission/task profile for
-  them. The **Profile Authority** column below reflects this live-code
+  them. The Profile Authority column below reflects this live-code
   value, not anything from the source files (which carry no such label at
   all).
-- **Even for the 3 confirmed identities, this report's wording is a
-  paraphrase of the real profile, not a verbatim copy.** E.g. `@GRANT`'s
+- Even for the 3 confirmed identities, this report's wording is a
+  paraphrase of the real profile, not a verbatim copy. E.g. `@GRANT`'s
   purpose sentence matches CARC's confirmed profile exactly, but its mission
   sentence does not; `@SALLY`'s and `@MAPE`'s purpose/mission text differ in
   wording (same substance) from `persona/mission-doctrine.js`. Read this
   table as reference material suggested by an unverified source, never as a
   quote of CARC's own confirmed data.
-- **The Division grouping does not always match each member's real
-  `command` field.** Most differences are cosmetic (`Academy Growth
+- The Division grouping does not always match each member's real
+  `command` field. Most differences are cosmetic (`Academy Growth
   Operations` → `Growth Operations`) or a reasonable consolidation of
   several distinct one/two-member live departments under one broader label
   (e.g. `Systems Engineering` here covers four different live `command`
   values: `Technology Command`, `Data Command`, `Automation Command`,
-  `Security Command`). One case has no such explanation: **`@MAPE`'s live
+  `Security Command`). One case has no such explanation: `@MAPE`'s live
   `command` is `Academy Program Management`, shared with no other roster
-  member at all**, yet this report places `@MAPE` inside `Growth
+  member at all, yet this report places `@MAPE` inside `Growth
   Operations` alongside 8 identities whose live `command` really is
   `Academy Growth Operations`. Flagged here, not silently corrected — the
   live `command` values are shown alongside every division so this can be
   checked directly.
 
-**Not reproduced inline**: the source `TASK REPORT.txt` (a fuller,
+Not reproduced inline: the source `TASK REPORT.txt` (a fuller,
 semicolon-delimited recurring-task list per identity — verbose, and
 overlaps substantially with the Primary Task column below) and `PRIMARY
 TASK 2.txt` (a second task axis with no live-code analog to attribute it
@@ -1121,29 +1121,29 @@ wants the fuller, equally-unverified detail.
 
 | Division (this report) | Members | Live `command` value(s) in `data/roster.js` |
 |---|---|---|
-| **Academy Business Services** | @VINNIE, @BOBBY, @CASSIE, @CEEVEE, @EMMI, @INTI | `Academy Business Services` |
-| **Academy Support Operations** | @CINDY, @VICTOR | `Academy Support Operations` |
-| **Growth Operations** | @ADAM, @BARBARA, @CELIA, @DIMARKO, @DIPEDI, @MAPE, @SEBO, @SOPHIE, @VEX | `Academy Growth Operations`, `Academy Program Management` |
-| **Sales Operations** | @CENA, @SIENNA | `Academy Sales Operations` |
-| **Social Operations** | @CARA, @FEBO, @INSTAR, @LINX, @SANDRA, @XAVIER, @VIDDI | `Academy Social Operations` |
-| **Creative & Content Operations** | @DINA, @CODY | `Academy Writing Operations` |
-| **Funding Operations** | @GRANT | `Academy Funding Operations` |
-| **Executive Administration** | @SALLY | `Academy Executive Administration` |
-| **Strategic Command** | @TROOPER_ALPHA, @TROOPER_TITAN, @TROOPER_OMEGA | `Strategic Command`, `Executive Command`, `AI Command` |
-| **Mission & Operations Command** | @ATLAS, @TROOPER_SIGMA | `Operations Command` |
-| **Quality & Verification** | @HELIX | `Independent Assurance` |
-| **Knowledge & Training** | @ATHENA, @TROOPER_YANKEE | `Knowledge Command`, `Academy Command` |
-| **Real Estate — Acquisition & Investment** | @TROOPER_BRAVO, @TROOPER_CHARLIE, @TROOPER_DELTA, @TROOPER_ECHO, @TROOPER_FOXTROT, @TROOPER_GOLF, @TROOPER_HOTEL, @TROOPER_INDIA | `Real Estate Operations` |
-| **Capital & Funding** | @TROOPER_KILO, @TROOPER_JULIET | `Capital Operations` |
-| **Legal, Compliance & Finance** | @TROOPER_MIKE, @TROOPER_LIMA | `Legal & Compliance`, `Finance & Governance` |
-| **Systems Engineering** | @ARCHITECT, @TROOPER_ROMEO, @TROOPER_QUEBEC, @TROOPER_OSCAR, @TROOPER_SIERRA | `Technology Command`, `Data Command`, `Automation Command`, `Security Command` |
-| **Data & Intelligence** | @TROOPER_PAPA | `Telemetry & Analytics` |
-| **Web3 Operations** | @TROOPER_NOVEMBER | `Web3 Command` |
-| **Brand & Commerce** | @TROOPER_WHISKEY, @TROOPER_VICTOR, @TROOPER_UNIFORM | `Brand Command`, `Growth Command`, `Commerce Command` |
-| **Creative Production** | @NOVA, @TROOPER_XRAY | `Creative Command`, `Media Command` |
-| **Logistics Operations** | @TROOPER_TANGO | `Logistics Command` |
-| **Research & Reconnaissance** | @ORION, @TROOPER_ZULU | `Recon Command` |
-| **Innovation & Resilience** | @TROOPER_PHOENIX | `Continuity & R&D` |
+| Academy Business Services | @VINNIE, @BOBBY, @CASSIE, @CEEVEE, @EMMI, @INTI | `Academy Business Services` |
+| Academy Support Operations | @CINDY, @VICTOR | `Academy Support Operations` |
+| Growth Operations | @ADAM, @BARBARA, @CELIA, @DIMARKO, @DIPEDI, @MAPE, @SEBO, @SOPHIE, @VEX | `Academy Growth Operations`, `Academy Program Management` |
+| Sales Operations | @CENA, @SIENNA | `Academy Sales Operations` |
+| Social Operations | @CARA, @FEBO, @INSTAR, @LINX, @SANDRA, @XAVIER, @VIDDI | `Academy Social Operations` |
+| Creative & Content Operations | @DINA, @CODY | `Academy Writing Operations` |
+| Funding Operations | @GRANT | `Academy Funding Operations` |
+| Executive Administration | @SALLY | `Academy Executive Administration` |
+| Strategic Command | @TROOPER_ALPHA, @TROOPER_TITAN, @TROOPER_OMEGA | `Strategic Command`, `Executive Command`, `AI Command` |
+| Mission & Operations Command | @ATLAS, @TROOPER_SIGMA | `Operations Command` |
+| Quality & Verification | @HELIX | `Independent Assurance` |
+| Knowledge & Training | @ATHENA, @TROOPER_YANKEE | `Knowledge Command`, `Academy Command` |
+| Real Estate — Acquisition & Investment | @TROOPER_BRAVO, @TROOPER_CHARLIE, @TROOPER_DELTA, @TROOPER_ECHO, @TROOPER_FOXTROT, @TROOPER_GOLF, @TROOPER_HOTEL, @TROOPER_INDIA | `Real Estate Operations` |
+| Capital & Funding | @TROOPER_KILO, @TROOPER_JULIET | `Capital Operations` |
+| Legal, Compliance & Finance | @TROOPER_MIKE, @TROOPER_LIMA | `Legal & Compliance`, `Finance & Governance` |
+| Systems Engineering | @ARCHITECT, @TROOPER_ROMEO, @TROOPER_QUEBEC, @TROOPER_OSCAR, @TROOPER_SIERRA | `Technology Command`, `Data Command`, `Automation Command`, `Security Command` |
+| Data & Intelligence | @TROOPER_PAPA | `Telemetry & Analytics` |
+| Web3 Operations | @TROOPER_NOVEMBER | `Web3 Command` |
+| Brand & Commerce | @TROOPER_WHISKEY, @TROOPER_VICTOR, @TROOPER_UNIFORM | `Brand Command`, `Growth Command`, `Commerce Command` |
+| Creative Production | @NOVA, @TROOPER_XRAY | `Creative Command`, `Media Command` |
+| Logistics Operations | @TROOPER_TANGO | `Logistics Command` |
+| Research & Reconnaissance | @ORION, @TROOPER_ZULU | `Recon Command` |
+| Innovation & Resilience | @TROOPER_PHOENIX | `Continuity & R&D` |
 
 ### Purpose, Mission & Primary Task
 
