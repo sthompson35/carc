@@ -72,6 +72,18 @@
         });
     }
 
+    // The real attendance denominator: every canonical identity regardless of active/inactive
+    // status. currentCanonicalParticipants() is active-only by design (it's the present/responding
+    // set for the roll call itself) — using it as both numerator and denominator collapses
+    // attendance into a tautology (present === total, always ~100%). This restores a genuine
+    // active/total ratio while still excluding non-canonical legacy duplicate rows from both sides.
+    function allCanonicalParticipants(participants) {
+        var canonical = canonicalRosterIndex();
+        return (participants || []).filter(function (p) {
+            return p && p.serviceMemberId && canonical[p.serviceMemberId];
+        });
+    }
+
 
     function reconcileLocalBroadcastConversation(c, participants) {
         if (!c || !Array.isArray(c.messagesList) || !c.messagesList.length) return { changed:false, removed:0, generated:0 };
@@ -238,9 +250,8 @@
         addLog('Roll call started — message: ' + message, 'warning', meta);
         setTimeout(function () {
             var participants = currentCanonicalParticipants(DATA.participants);
-            var activeParticipants = participants;
-            var total = participants.length || 1;
-            var present = activeParticipants.length;
+            var total = allCanonicalParticipants(DATA.participants).length || 1;
+            var present = participants.length;
             var rate = +((present / total) * 100).toFixed(1);
             var rcNum = DATA.rollCalls.length + 1;
             var now = new Date();

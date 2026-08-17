@@ -46,11 +46,10 @@
                 { time: nowTime(), at: new Date().toISOString(), event: 'Councilor Lee excused', status: 'warning' },
                 { time: nowTime(), at: new Date().toISOString(), event: 'Daily standup started', status: 'info' }
             ],
-            messageActivity: [
-                { hour: '00:00', count: 2 }, { hour: '02:00', count: 0 }, { hour: '04:00', count: 0 }, { hour: '06:00', count: 1 },
-                { hour: '08:00', count: 8 }, { hour: '10:00', count: 45 }, { hour: '12:00', count: 32 }, { hour: '14:00', count: 28 },
-                { hour: '16:00', count: 19 }, { hour: '18:00', count: 12 }, { hour: '20:00', count: 5 }, { hour: '22:00', count: 3 }
-            ],
+            // Real hour-of-day distribution, recomputed from actual message timestamps by
+            // computeMessageActivity() (app/charts.js) on every render — this starting value is
+            // overwritten unconditionally before it's ever read, never fabricated seed counts.
+            messageActivity: [],
             sentiment: { positive: 68.4, neutral: 24.1, negative: 7.5 },
             agent: {
                 name: 'Council Roll Call Agent',

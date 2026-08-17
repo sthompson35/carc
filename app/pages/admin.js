@@ -255,7 +255,7 @@
             return;
         }
         if (backupBtn) backupBtn.disabled = false;
-        var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+        var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         var base = ep.url.replace(/\/+$/, '');
@@ -265,9 +265,13 @@
             fetch(base + '/health', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; }),
             fetch(base + '/api/sync-status', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; }),
             fetch(base + '/api/sync-events?limit=5', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; }),
-            fetch(base + '/api/admin/backups', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; })
+            fetch(base + '/api/admin/backups', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+            fetch(base + '/api/tasks?limit=5', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+            fetch(base + '/api/handoffs?limit=5', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+            fetch(base + '/api/chat?limit=5', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; }),
+            fetch(base + '/api/commands?limit=5', { headers: headers }).then(function(r){ return r.json(); }).catch(function(){ return null; })
         ]).then(function(res) {
-            var health = res[0], status = res[1], events = res[2], backups = res[3];
+            var health = res[0], status = res[1], events = res[2], backups = res[3], tasks = res[4], handoffs = res[5], chat = res[6], commands = res[7];
             var stateCls = { CURRENT:'audit-ok', STALE:'audit-warn', ERROR:'audit-bad', UNSYNCED:'' };
             var html = '';
             html += '<div class="kv-row"><span>Backend health</span><span class="'+(health && health.status==='OK'?'audit-ok':'audit-bad')+'">'+(health ? esc(health.status)+' · '+esc(health.verifications)+' verifications' : 'UNREACHABLE')+'</span></div>';
@@ -287,6 +291,31 @@
                 html += bList.length ? bList.slice(0,5).map(function(b){
                     return '<div class="kv-row"><span class="text-xs">'+esc(b.file)+'</span><span class="text-xs">'+Math.round(b.sizeBytes/1024)+' KB · '+esc(fmtDate(b.createdAt))+'</span></div>';
                 }).join('') : '<div class="text-xs text-muted">No backups yet.</div>';
+            }
+            if (tasks && tasks.rows) {
+                html += '<div class="text-xs text-muted mt-2 mb-1">RECENT TASKS ('+tasks.total+')</div>';
+                html += tasks.rows.length ? tasks.rows.slice(0,5).map(function(t){
+                    return '<div class="kv-row"><span class="text-xs">'+esc(t.title)+'</span><span class="text-xs">'+esc(t.state)+' · '+esc(fmtDate(t.updatedAt))+'</span></div>';
+                }).join('') : '<div class="text-xs text-muted">No tasks synced yet.</div>';
+            }
+            if (handoffs && handoffs.rows) {
+                html += '<div class="text-xs text-muted mt-2 mb-1">RECENT HANDOFFS ('+handoffs.total+')</div>';
+                html += handoffs.rows.length ? handoffs.rows.slice(0,5).map(function(h){
+                    return '<div class="kv-row"><span class="text-xs">'+esc(h.fromServiceMemberId)+' → '+esc(h.toServiceMemberId)+'</span><span class="text-xs">'+esc(h.state)+'</span></div>';
+                }).join('') : '<div class="text-xs text-muted">No handoffs synced yet.</div>';
+            }
+            if (chat && chat.rows) {
+                html += '<div class="text-xs text-muted mt-2 mb-1">RECENT CHAT ('+chat.total+')</div>';
+                html += chat.rows.length ? chat.rows.slice(0,5).map(function(m){
+                    var text = String(m.text || '').slice(0, 60);
+                    return '<div class="kv-row"><span class="text-xs">'+esc(m.role)+': '+esc(text)+(String(m.text||'').length>60?'…':'')+'</span><span class="text-xs">'+esc(fmtDate(m.occurredAt))+'</span></div>';
+                }).join('') : '<div class="text-xs text-muted">No chat synced yet.</div>';
+            }
+            if (commands && commands.rows) {
+                html += '<div class="text-xs text-muted mt-2 mb-1">RECENT COMMANDS ('+commands.total+')</div>';
+                html += commands.rows.length ? commands.rows.slice(0,5).map(function(c){
+                    return '<div class="kv-row"><span class="text-xs">'+esc(c.event)+'</span><span class="text-xs '+(c.status==='success'?'audit-ok':c.status==='error'?'audit-bad':'')+'">'+esc(c.status)+' · '+esc(fmtDate(c.occurredAt))+'</span></div>';
+                }).join('') : '<div class="text-xs text-muted">No commands synced yet.</div>';
             }
             panel.innerHTML = html || '<div class="text-muted text-sm">No data returned.</div>';
         });
@@ -342,7 +371,7 @@
         document.getElementById('admBtnBackupNow').addEventListener('click', function () {
             var ep = (DATA.governance && DATA.governance.endpoint) || {};
             if (!ep.url) { showToast('error', '❌ No endpoint URL configured'); return; }
-            var token = ''; try { token = localStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
+            var token = ''; try { token = sessionStorage.getItem('carc_endpoint_token') || ''; } catch(e) {}
             var headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = 'Bearer ' + token;
             var base = ep.url.replace(/\/+$/, '');

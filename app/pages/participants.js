@@ -152,7 +152,10 @@
         document.getElementById('partBulkBar').hidden = ids.length === 0;
         document.getElementById('partSelCount').textContent = ids.length;
         var master = document.getElementById('partSelectAll');
-        if (master) master.checked = ids.length > 0 && DATA.participants.every(function (p) { return document.querySelector('[data-id="' + p.id + '"].part-row-check') ? true : true; }) && false;
+        if (master) {
+            var rowChecks = $all('.part-row-check', document.getElementById('page-participants'));
+            master.checked = rowChecks.length > 0 && rowChecks.every(function (cb) { return cb.checked; });
+        }
     }
 
 

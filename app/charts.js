@@ -48,12 +48,34 @@
         }
     }
 
+    // Real hour-of-day distribution over every message ever sent (DATA.conversations[].
+    // messagesList[].time, always a real ISO timestamp — see buildRollCallTranscript /
+    // rollCallResponseFor). Buckets by hour-of-day across all days, into the same 12 two-hour
+    // slots the seed data used to hardcode, so renderActivityChartInto/renderPeakHoursInto and
+    // their markup are unchanged — only the numbers behind them are now real, not fixed seed data.
+    function computeMessageActivity() {
+        var buckets = [];
+        for (var h = 0; h < 24; h += 2) buckets.push({ hour: (h < 10 ? '0' : '') + h + ':00', count: 0 });
+        (DATA.conversations || []).forEach(function (c) {
+            (c.messagesList || []).forEach(function (m) {
+                if (!m || !m.time) return;
+                var d = new Date(m.time);
+                if (isNaN(d.getTime())) return;
+                var idx = Math.floor(d.getHours() / 2);
+                buckets[idx].count++;
+            });
+        });
+        return buckets;
+    }
+
     function renderActivityChartInto(elId) {
+        DATA.messageActivity = computeMessageActivity();
         var items = DATA.messageActivity.map(function (d) { return { label: d.hour, value: d.count }; });
         renderBarList(elId, items, { colorFn: function (d) { return d.value > 30 ? 'green' : d.value > 15 ? 'orange' : 'purple'; } });
     }
 
     function renderPeakHoursInto(elId) {
+        DATA.messageActivity = computeMessageActivity();
         var peaks = DATA.messageActivity.slice().sort(function (a, b) { return b.count - a.count; }).slice(0, 5).filter(function (d) { return d.count > 0; });
         var items = peaks.map(function (d) { return { label: d.hour, value: d.count }; });
         renderBarList(elId, items, { colorFn: function () { return 'orange'; } });
