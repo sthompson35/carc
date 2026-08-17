@@ -42,4 +42,26 @@ module.exports={modules:['persona/alias-registry.js','persona/knowledge-path.js'
     var approved=ctx.reviewKnowledgePathPilotEvidence(pt,'APPROVE','@HELIX','Evidence complete',learner,new Date('2026-01-01T05:00:00Z'));
     assert(approved.ok&&approved.verified&&pt.status==='RESOLVED','@HELIX approval resolves the pilot ticket');
     assert(learner.knowledgePath.stages[0].status==='VERIFIED'&&learner.knowledgePath.stages[0].verifier==='ATA-HELIX-000','approved complete evidence verifies only the targeted Competency Baseline stage, storing the resolved canonical verifier ID');
+
+    // Tool Readiness: real linkage to the Knowledge Path 'tools' stage, mirroring the pilot.
+    var toolSubject={serviceMemberId:'ATA-ONE-000',callsign:'@ONE',memberProfile:{toolProfile:{assignedTools:['CRM','Email']}},knowledgePath:ctx.buildDefaultKnowledgePath()};
+    ctx.DATA={participants:[toolSubject,{serviceMemberId:'ATA-HELIX-000',callsign:'@HELIX'}]};
+    var toolTickets=ctx.buildToolReadinessTickets([toolSubject],[],new Date('2026-01-01T00:00:00Z'));
+    assert(toolTickets.created.length===1,'one Tool Readiness ticket is created for the one identity with assigned tools');
+    var tt=toolTickets.created[0];
+    assert(tt.toolReadinessReview&&tt.toolReadinessReview.stageId==='tools'&&tt.toolReadinessReview.reviewer==='@HELIX'&&tt.toolReadinessReview.state==='EVIDENCE_REQUIRED','the ticket carries a real, HELIX-reviewed link to the Knowledge Path tools stage, not just inventory data');
+    var emptyEvidence=ctx.submitToolReadinessEvidence(tt,'   ');
+    assert(!emptyEvidence.ok&&emptyEvidence.error==='MISSING_REQUIRED_EVIDENCE','blank evidence is rejected, not silently accepted');
+    var trSubmitted=ctx.submitToolReadinessEvidence(tt,'CRM connection confirmed, least-privilege scoped, negative test passed.','2026-01-01T01:00:00Z');
+    assert(trSubmitted.ok&&tt.toolReadinessReview.state==='REVIEW_REQUIRED'&&tt.status==='WAITING'&&tt.assignee==='@HELIX','evidence submission moves to review without verifying the stage');
+    assert(toolSubject.knowledgePath.stages.find(function(s){return s.id==='tools';}).status==='PENDING','submission alone leaves Tool Enablement PENDING');
+    var trWrongReviewer=ctx.reviewToolReadinessEvidence(tt,'APPROVE','@ONE','looks fine',toolSubject,new Date('2026-01-01T02:00:00Z'));
+    assert(!trWrongReviewer.ok&&trWrongReviewer.error==='REVIEWER_MISMATCH','the subject cannot approve their own tool-readiness evidence');
+    var trNoNote=ctx.reviewToolReadinessEvidence(tt,'APPROVE','@HELIX','',toolSubject,new Date('2026-01-01T03:00:00Z'));
+    assert(!trNoNote.ok&&trNoNote.error==='REVIEW_NOTE_REQUIRED','a review with no note is rejected regardless of decision');
+    var trReallyApproved=ctx.reviewToolReadinessEvidence(tt,'APPROVE','@HELIX','Confirmed and tested',toolSubject,new Date('2026-01-01T03:00:00Z'));
+    assert(trReallyApproved.ok&&trReallyApproved.verified&&tt.status==='RESOLVED','HELIX approval resolves the ticket and verifies the stage');
+    var toolsStage=toolSubject.knowledgePath.stages.find(function(s){return s.id==='tools';});
+    assert(toolsStage.status==='VERIFIED'&&toolsStage.verifier==='ATA-HELIX-000','approved tool-readiness evidence verifies the real Tool Enablement stage with the resolved canonical verifier ID');
+    assert(tt.toolInventory.status==='VERIFIED','the ticket'+"'"+'s own tool inventory summary reflects the real verified outcome, not left at REVIEW_REQUIRED');
 }};

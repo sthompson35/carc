@@ -73,6 +73,10 @@ function buildToolReadinessTickets(participants, tickets, now) {
         var description = 'Validate the complete assigned-tool profile for ' + p.callsign + '.\n\nAssigned tools (' + tools.length + '):\n- ' + (tools.length ? tools.join('\n- ') : 'NO TOOLS RECORDED — profile review required') +
             '\n\nAcceptance criteria for every tool:\n1. Canonical purpose and approved use documented.\n2. Connection or availability confirmed.\n3. Least-privilege authorization verified.\n4. Governed source and data boundaries recorded.\n5. Role-specific operation tested, including one negative test.\n6. Evidence, timestamp, result, blocker, and remediation owner retained.\n7. @TANGO quality review and @HELIX independent verification completed.\n\nTool assignment alone does not imply connection, authorization, competency, or production readiness.';
         var ticket = helpDeskCreateTicket({ subject:p.callsign + ' · Tool Readiness & Access', description:description, requester:'CARC Tool Registry', category:'ACCESS', priority:'MEDIUM', assignee:p.callsign, sourceKey:sourceKey, toolInventory:{ serviceMemberId:p.serviceMemberId, callsign:p.callsign, assignedTools:tools.slice(), total:tools.length, status:'REVIEW_REQUIRED' } }, tickets.concat(created), now);
+        // Real linkage to the Knowledge Path 'tools' stage — mirrors knowledgePathPilot's shape.
+        // @HELIX matches the independent-verification reviewer this ticket's own acceptance
+        // criteria text already names; the subject is never their own reviewer.
+        ticket.toolReadinessReview = { serviceMemberId:p.serviceMemberId, callsign:p.callsign, stageId:'tools', reviewer:'@HELIX', state:'EVIDENCE_REQUIRED' };
         created.push(ticket);
     });
     return { created:created, skipped:skipped };
@@ -145,6 +149,39 @@ function reviewKnowledgePathPilotEvidence(ticket,decision,reviewer,note,particip
     return {ok:true,verified:true,ticket:ticket,stage:recorded.stage};
 }
 
+function submitToolReadinessEvidence(ticket,evidence,submittedBy,now){
+    if(!ticket||!ticket.toolReadinessReview)return {ok:false,error:'NOT_TOOL_READINESS_TICKET'};
+    if(['EVIDENCE_REQUIRED','CORRECTION_REQUIRED'].indexOf(ticket.toolReadinessReview.state)===-1)return {ok:false,error:'INVALID_REVIEW_STATE'};
+    evidence=String(evidence||'').trim();
+    if(!evidence)return {ok:false,error:'MISSING_REQUIRED_EVIDENCE'};
+    var at=new Date(now||Date.now()).toISOString();
+    ticket.toolReadinessReview.evidenceSubmission={evidence:evidence,submittedBy:String(submittedBy||ticket.toolReadinessReview.callsign).trim(),submittedAt:at};
+    ticket.toolReadinessReview.state='REVIEW_REQUIRED';ticket.status='WAITING';ticket.assignee=ticket.toolReadinessReview.reviewer;ticket.updatedAt=at;
+    ticket.history.push({at:at,actor:ticket.toolReadinessReview.evidenceSubmission.submittedBy,action:'EVIDENCE_SUBMITTED',from:'EVIDENCE_REQUIRED',to:'REVIEW_REQUIRED',note:'Tool Readiness evidence submitted for independent review'});
+    return {ok:true,ticket:ticket};
+}
+
+function reviewToolReadinessEvidence(ticket,decision,reviewer,note,participant,now){
+    if(!ticket||!ticket.toolReadinessReview)return {ok:false,error:'NOT_TOOL_READINESS_TICKET'};
+    if(ticket.toolReadinessReview.state!=='REVIEW_REQUIRED')return {ok:false,error:'INVALID_REVIEW_STATE'};
+    if(reviewer!==ticket.toolReadinessReview.reviewer)return {ok:false,error:'REVIEWER_MISMATCH'};
+    if(['APPROVE','REJECT'].indexOf(decision)===-1)return {ok:false,error:'INVALID_DECISION'};
+    if(!String(note||'').trim())return {ok:false,error:'REVIEW_NOTE_REQUIRED'};
+    var at=new Date(now||Date.now()).toISOString(),submission=ticket.toolReadinessReview.evidenceSubmission;
+    if(decision==='REJECT'){
+        ticket.toolReadinessReview.state='CORRECTION_REQUIRED';ticket.status='IN_PROGRESS';ticket.assignee=ticket.toolReadinessReview.callsign;ticket.updatedAt=at;
+        ticket.history.push({at:at,actor:reviewer,action:'EVIDENCE_REJECTED',from:'REVIEW_REQUIRED',to:'CORRECTION_REQUIRED',note:String(note)});
+        return {ok:true,verified:false,ticket:ticket};
+    }
+    var recorded=recordKnowledgePathStageEvidence(participant,ticket.toolReadinessReview.stageId,{status:'VERIFIED',evidence:submission.evidence,verifier:reviewer,updatedAt:at,evidenceEventId:'TOOL-REVIEW-'+ticket.id});
+    if(!recorded.ok)return recorded;
+    ticket.toolReadinessReview.state='VERIFIED';ticket.toolReadinessReview.review={decision:decision,reviewer:reviewer,note:String(note),reviewedAt:at};
+    if(ticket.toolInventory)ticket.toolInventory.status='VERIFIED';
+    ticket.status='RESOLVED';ticket.resolvedAt=at;ticket.updatedAt=at;
+    ticket.history.push({at:at,actor:reviewer,action:'EVIDENCE_APPROVED',from:'REVIEW_REQUIRED',to:'VERIFIED',note:String(note)});
+    return {ok:true,verified:true,ticket:ticket,stage:recorded.stage};
+}
+
 function helpDeskBadge(value) {
     var cls = value === 'CRITICAL' || value === 'BREACHED' ? 'badge-danger' : value === 'HIGH' || value === 'AT_RISK' || value === 'WAITING' ? 'badge-warning' : value === 'RESOLVED' || value === 'CLOSED' || value === 'COMPLETE' || value === 'ON_TRACK' ? 'badge-success' : 'badge-info';
     return '<span class="badge ' + cls + '">' + esc(value.replace(/_/g, ' ')) + '</span>';
@@ -202,11 +239,19 @@ function openHelpDeskTicket(id) {
     var support=(DATA.participants||[]).filter(function(p){return p.callsign===t.assignee||p.callsign==='@CINDY'||p.callsign==='@VICTOR'||p.callsign==='@TANGO'||p.callsign==='@HELIX';});
     var pilot=t.knowledgePathPilot,pilotBody='';
     if(pilot){pilotBody='<div class="panel mt-2"><b>Knowledge Path Evidence Workflow</b><div class="kv-row"><span>Stage</span><span>'+esc(pilot.stageId)+'</span></div><div class="kv-row"><span>Workflow State</span><span>'+helpDeskBadge(pilot.state)+'</span></div><div class="kv-row"><span>Independent Reviewer</span><b>'+esc(pilot.reviewer)+'</b></div>'+(pilot.state==='EVIDENCE_REQUIRED'||pilot.state==='CORRECTION_REQUIRED'?PILOT_EVIDENCE_FIELDS.map(function(k){return '<div class="form-group"><label>'+esc(k.replace(/([A-Z])/g,' $1'))+' *</label>'+(k==='completedAt'?'<input id="kpe_'+k+'" type="datetime-local">':'<textarea id="kpe_'+k+'" rows="2"></textarea>')+'</div>';}).join('')+'<div class="form-group"><label>Submitted By</label><input id="kpe_submittedBy" value="'+esc(pilot.callsign)+'" disabled></div>':'')+(pilot.state==='REVIEW_REQUIRED'?'<div class="form-group"><label>@HELIX Review Note *</label><textarea id="kpe_reviewNote" rows="3"></textarea></div>':'')+'</div>';}
-    var body='<div class="kv-row"><span>Subject</span><b>'+esc(t.subject)+'</b></div><div class="kv-row"><span>Category / Priority</span><span>'+esc(t.category)+' · '+esc(t.priority)+'</span></div><div class="kv-row"><span>SLA</span><span>'+helpDeskBadge(helpDeskSlaState(t))+' · '+esc(fmtDate(t.dueAt))+'</span></div><p class="mt-2">'+esc(t.description)+'</p>'+pilotBody+
+    var inv=t.toolInventory,review=t.toolReadinessReview,toolBody='';
+    if(inv){toolBody='<div class="panel mt-2"><b>Assigned Tool Inventory (' + inv.total + ')</b>'+
+        (inv.assignedTools&&inv.assignedTools.length?'<ul style="padding-left:18px;margin-top:4px;">'+inv.assignedTools.map(function(x){return '<li class="text-sm">'+esc(x)+'</li>';}).join('')+'</ul>':'<div class="text-sm text-muted">No tools recorded</div>')+
+        (review?'<div class="kv-row mt-1"><span>Tool Readiness Stage</span><span>'+esc(review.stageId)+'</span></div><div class="kv-row"><span>Workflow State</span><span>'+helpDeskBadge(review.state)+'</span></div><div class="kv-row"><span>Independent Reviewer</span><b>'+esc(review.reviewer)+'</b></div>'+
+            (review.state==='EVIDENCE_REQUIRED'||review.state==='CORRECTION_REQUIRED'?'<div class="form-group"><label>Readiness Evidence *</label><textarea id="tre_evidence" rows="3" placeholder="Connection/availability confirmed, least-privilege authorization verified, negative test result, evidence reference…"></textarea></div>':'')+
+            (review.state==='REVIEW_REQUIRED'?'<div class="form-group"><label>@HELIX Review Note *</label><textarea id="tre_reviewNote" rows="3"></textarea></div>':'') : '')+
+        '</div>';}
+    var body='<div class="kv-row"><span>Subject</span><b>'+esc(t.subject)+'</b></div><div class="kv-row"><span>Category / Priority</span><span>'+esc(t.category)+' · '+esc(t.priority)+'</span></div><div class="kv-row"><span>SLA</span><span>'+helpDeskBadge(helpDeskSlaState(t))+' · '+esc(fmtDate(t.dueAt))+'</span></div><p class="mt-2">'+esc(t.description)+'</p>'+pilotBody+toolBody+
         '<div class="form-row mt-2"><div class="form-group"><label>Status</label><select id="hdEditStatus">'+HELP_DESK_STATUSES.map(function(x){return '<option'+(x===t.status?' selected':'')+'>'+x+'</option>';}).join('')+'</select></div><div class="form-group"><label>Assignee</label><select id="hdEditAssignee">'+support.map(function(p){return '<option value="'+esc(p.callsign)+'"'+(p.callsign===t.assignee?' selected':'')+'>'+esc(p.callsign+' · '+p.role)+'</option>';}).join('')+'</select></div></div>'+
         '<div class="form-group"><label>Update note</label><textarea id="hdEditNote" rows="3" placeholder="Work performed, evidence, blocker, or resolution"></textarea></div><div class="mt-2"><b>Activity history</b><div class="activity-list">'+history+'</div></div>';
     var pilotActions=pilot&&(pilot.state==='EVIDENCE_REQUIRED'||pilot.state==='CORRECTION_REQUIRED')?'<button class="btn btn-primary" id="kpeSubmit">Submit Evidence</button>':pilot&&pilot.state==='REVIEW_REQUIRED'?'<button class="btn btn-outline" id="kpeReject">Reject</button><button class="btn btn-success" id="kpeApprove">Approve Evidence</button>':'';
-    openModal(t.id+' · Help Desk Ticket',body,'<button class="btn btn-outline" id="hdClose">Close</button>'+pilotActions+'<button class="btn btn-primary" id="hdSave">Save Update</button>');
+    var toolActions=review&&(review.state==='EVIDENCE_REQUIRED'||review.state==='CORRECTION_REQUIRED')?'<button class="btn btn-primary" id="treSubmit">Submit Readiness Evidence</button>':review&&review.state==='REVIEW_REQUIRED'?'<button class="btn btn-outline" id="treReject">Reject</button><button class="btn btn-success" id="treApprove">Approve Evidence</button>':'';
+    openModal(t.id+' · Help Desk Ticket',body,'<button class="btn btn-outline" id="hdClose">Close</button>'+pilotActions+toolActions+'<button class="btn btn-primary" id="hdSave">Save Update</button>');
     document.getElementById('hdClose').addEventListener('click',closeModal);
     document.getElementById('hdSave').addEventListener('click',function(){
         var status=document.getElementById('hdEditStatus').value, assignee=document.getElementById('hdEditAssignee').value, note=document.getElementById('hdEditNote').value.trim();
@@ -218,6 +263,10 @@ function openHelpDeskTicket(id) {
     function decidePilot(decision){var note=document.getElementById('kpe_reviewNote').value.trim(),p=DATA.participants.find(function(x){return x.serviceMemberId===pilot.serviceMemberId;});var result=reviewKnowledgePathPilotEvidence(t,decision,'@HELIX',note,p);if(!result.ok){showToast('error','❌ '+result.error);return;}addLog(t.id+' pilot evidence '+(result.verified?'approved — Competency Baseline VERIFIED':'rejected — correction required'),result.verified?'success':'warning',{correlationId:'KP-REVIEW-'+t.id,serviceMemberId:pilot.serviceMemberId,outcome:decision,risk:'CONTROLLED_PILOT'});saveData();closeModal();renderHelpDeskPage();renderGovernancePage();showToast(result.verified?'success':'warning',result.verified?'✅ Evidence approved and stage verified':'Correction required; stage remains PENDING');}
     if(document.getElementById('kpeApprove'))document.getElementById('kpeApprove').addEventListener('click',function(){decidePilot('APPROVE');});
     if(document.getElementById('kpeReject'))document.getElementById('kpeReject').addEventListener('click',function(){decidePilot('REJECT');});
+    if(document.getElementById('treSubmit'))document.getElementById('treSubmit').addEventListener('click',function(){var evidence=document.getElementById('tre_evidence').value;var result=submitToolReadinessEvidence(t,evidence,review.callsign);if(!result.ok){showToast('error','❌ '+result.error);return;}addLog(t.id+' tool readiness evidence submitted for @HELIX review','info',{correlationId:'TOOL-EVIDENCE-'+t.id,risk:'CONTROLLED_PILOT'});saveData();closeModal();renderHelpDeskPage();showToast('success','Evidence submitted — Tool Enablement stage remains PENDING until review');});
+    function decideToolReadiness(decision){var note=document.getElementById('tre_reviewNote').value.trim(),p=DATA.participants.find(function(x){return x.serviceMemberId===review.serviceMemberId;});var result=reviewToolReadinessEvidence(t,decision,'@HELIX',note,p);if(!result.ok){showToast('error','❌ '+result.error);return;}addLog(t.id+' tool readiness evidence '+(result.verified?'approved — Tool Enablement VERIFIED':'rejected — correction required'),result.verified?'success':'warning',{correlationId:'TOOL-REVIEW-'+t.id,serviceMemberId:review.serviceMemberId,outcome:decision,risk:'CONTROLLED_PILOT'});saveData();closeModal();renderHelpDeskPage();renderGovernancePage();showToast(result.verified?'success':'warning',result.verified?'✅ Evidence approved and Tool Enablement stage verified':'Correction required; stage remains PENDING');}
+    if(document.getElementById('treApprove'))document.getElementById('treApprove').addEventListener('click',function(){decideToolReadiness('APPROVE');});
+    if(document.getElementById('treReject'))document.getElementById('treReject').addEventListener('click',function(){decideToolReadiness('REJECT');});
 }
 
 function createAllToolReadinessTickets(){
